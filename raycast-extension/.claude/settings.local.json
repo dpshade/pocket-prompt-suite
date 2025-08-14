@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:developers.raycast.com)",
+      "Bash(bun create:*)",
+      "WebFetch(domain:raycast.com)",
+      "Bash(bun:*)",
+      "Bash(npx create-raycast-extension:*)",
+      "Bash(mkdir:*)",
+      "Bash(curl:*)",
+      "Bash(rm:*)",
+      "Bash(node:*)",
+      "Bash(mv:*)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "Bash(convert:*)",
+      "Bash(magick:*)"
+    ],
+    "additionalDirectories": [
+      "/Users/dylanshade/Developer/pocket-prompt-suite/core/"
+    ]
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "name": "pocket-prompt-suite",
+  "version": "1.0.0",
+  "description": "AI context management system with CLI, TUI, and Raycast integration",
+  "private": true,
+  "workspaces": [
+    "raycast-extension"
+  ],
+  "scripts": {
+    "dev": "cd raycast-extension && bun run dev",
+    "build": "bun run build:core && bun run build:extension", 
+    "build:core": "cd core && go build -o pocket-prompt main.go",
+    "build:extension": "cd raycast-extension && bun run build",
+    "test": "bun run test:core && bun run test:extension",
+    "test:core": "cd core && go test ./...",
+    "test:extension": "cd raycast-extension && bun run test",
+    "lint": "bun run lint:extension",
+    "lint:extension": "cd raycast-extension && bun run lint",
+    "publish:extension": "cd raycast-extension && bun run publish",
+    "server": "cd core && go run main.go --url-server",
+    "tui": "cd core && go run main.go --tui"
+  },
+  "keywords": [
+    "ai",
+    "prompts", 
+    "context-management",
+    "raycast",
+    "cli",
+    "tui"
+  ],
+  "author": "dylanshade",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "bun": ">=1.0.0"
+  }
+}
