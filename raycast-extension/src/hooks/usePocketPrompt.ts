@@ -128,17 +128,18 @@ export function useUnifiedSearch(
       packs?: string[],
     ): Promise<PocketPrompt[]> => {
       if (!fuzzy.trim() && !expr.trim() && type !== "saved") {
-        // If no search query, return all prompts from the selected packs
+        // If no query, return prompts based on pack selection
+        if (packs && packs.includes("__all__")) {
+          return pocketPromptAPI.listAllPrompts();
+        }
         if (packs && packs.length > 0) {
-          // Fetch prompts from multiple packs and combine them
           const allPackPrompts = await Promise.all(
-            packs.map(pack => 
-              pack === "personal" 
-                ? pocketPromptAPI.listAllPrompts() 
+            packs.map(pack =>
+              pack === "personal"
+                ? pocketPromptAPI.listAllPrompts()
                 : pocketPromptAPI.listPromptsByPack(pack)
             )
           );
-          // Flatten the arrays and deduplicate by ID
           const combined = allPackPrompts.flat();
           const seen = new Set<string>();
           return combined.filter(prompt => {
@@ -146,9 +147,8 @@ export function useUnifiedSearch(
             seen.add(prompt.ID);
             return true;
           });
-        } else {
-          return pocketPromptAPI.listAllPrompts();
         }
+        return pocketPromptAPI.listAllPrompts();
       }
 
       switch (type) {

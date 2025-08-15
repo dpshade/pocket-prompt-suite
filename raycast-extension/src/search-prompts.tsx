@@ -18,11 +18,12 @@ import {
   useTags,
   useSavedSearches,
 } from "./hooks/usePocketPrompt";
-import { useCachedPromise } from "@raycast/utils";
+// import { useCachedPromise } from "@raycast/utils";
 import { PocketPrompt, SearchMode } from "./types";
 import { pocketPromptAPI } from "./utils/api";
 import PromptDetailView from "./components/PromptDetailView";
 import AddPrompt from "./add-prompt";
+import PackSelectorModal from "./components/PackSelectorModal";
 
 interface SearchPromptsProps {
   initialSearchMode?: SearchMode;
@@ -39,7 +40,7 @@ export default function SearchPrompts({ initialSearchMode }: SearchPromptsProps 
     return "";
   });
   const [selectedFilter, setSelectedFilter] = useState<string>("");
-  const [selectedPacks, setSelectedPacks] = useState<string[]>(["personal"]);
+  const [selectedPacks, setSelectedPacks] = useState<string[]>(["__all__"]);
 
   const {
     data: serverHealth,
@@ -48,11 +49,6 @@ export default function SearchPrompts({ initialSearchMode }: SearchPromptsProps 
   } = useServerHealth();
   const { data: tags } = useTags();
   const { data: savedSearches } = useSavedSearches();
-  const { data: availablePacks } = useCachedPromise(
-    async () => pocketPromptAPI.getAvailablePacks(),
-    [],
-    { initialData: { "Personal Library (default)": "personal" } }
-  );
 
   // Initialize search mode when data is loaded
   useEffect(() => {
@@ -68,18 +64,15 @@ export default function SearchPrompts({ initialSearchMode }: SearchPromptsProps 
     }
   }, [initialSearchMode, savedSearches, selectedFilter]);
 
-  // Handle pack selection separately to avoid re-render loops
+  // Packs are no longer selectable from the filter dropdown. We keep
+  // the default "personal" pack context for now.
+
+  // Handle special dropdown actions
   useEffect(() => {
-    if (selectedFilter.startsWith("pack:")) {
-      const packName = selectedFilter.replace("pack:", "");
-      const newPacks = selectedPacks.includes(packName) 
-        ? selectedPacks.filter(p => p !== packName) // Remove if already selected
-        : [...selectedPacks, packName]; // Add if not selected
-      
-      if (JSON.stringify(newPacks) !== JSON.stringify(selectedPacks)) {
-        setSelectedPacks(newPacks);
+    if (selectedFilter === "context:all") {
+      if (JSON.stringify(selectedPacks) !== JSON.stringify(["__all__"])) {
+        setSelectedPacks(["__all__"]);
       }
-      // Clear the filter to allow multiple selections
       setSelectedFilter("");
     }
   }, [selectedFilter, selectedPacks]);
@@ -197,12 +190,6 @@ export default function SearchPrompts({ initialSearchMode }: SearchPromptsProps 
       const tag = selectedFilter.replace("tag:", "");
       return `Filtering by tag: ${tag}`;
     }
-    if (selectedPacks.length === 1 && selectedPacks[0] !== "personal") {
-      return `Search ${selectedPacks[0]} pack...`;
-    }
-    if (selectedPacks.length > 1) {
-      return `Search ${selectedPacks.length} selected packs...`;
-    }
     return "Search prompts...";
   };
 
@@ -226,21 +213,13 @@ export default function SearchPrompts({ initialSearchMode }: SearchPromptsProps 
     }
 
     if (!searchText.trim()) {
-      const packContext = selectedPacks.length === 1 && selectedPacks[0] !== "personal"
-        ? `Searching in ${selectedPacks[0]} pack.\n\n`
-        : selectedPacks.length > 1
-        ? `Searching in ${selectedPacks.length} selected packs.\n\n`
-        : "";
-        
       return {
         title: "Search Your Prompts",
         description:
-          packContext +
           `Start typing to search, or use the filter dropdown.\n\n` +
           `• Fuzzy search: "machine learning"\n` +
           `• Boolean search: "[ai AND agent]"\n` +
-          `• Mixed search: "tutorial [python OR javascript]"\n\n` +
-          `Use the dropdown to select packs (multi-select supported).`,
+          `• Mixed search: "tutorial [python OR javascript]"`,
         icon: Icon.MagnifyingGlass,
       };
     }
@@ -279,32 +258,18 @@ export default function SearchPrompts({ initialSearchMode }: SearchPromptsProps 
       searchBarAccessory={
         <List.Dropdown
           tooltip="Filter and Search Options"
-          placeholder={selectedPacks.length === 1 && selectedPacks[0] === "personal" 
-            ? "Personal Library" 
-            : selectedPacks.length === 1 
-            ? selectedPacks[0] 
-            : `${selectedPacks.length} Packs Selected`}
+          placeholder="Filter by saved searches or tags"
           value={selectedFilter}
           onChange={(value) => setSelectedFilter(value || "")}
         >
-          <List.Dropdown.Section title="Packs (Multi-select)">
-            {availablePacks && Object.entries(availablePacks).map(([displayName, packName]) => {
-              const isSelected = selectedPacks.includes(packName);
-              return (
-                <List.Dropdown.Item
-                  key={`pack:${packName}`}
-                  title={isSelected ? `✓ ${displayName}` : displayName}
-                  value={`pack:${packName}`}
-                  icon={{ 
-                    source: isSelected ? Icon.CheckCircle : Icon.Box, 
-                    tintColor: isSelected ? Color.Green : Color.Orange 
-                  }}
-                />
-              );
-            })}
+          <List.Dropdown.Section title="Scope">
+            <List.Dropdown.Item
+              key="context:all"
+              title="All Prompts"
+              value="context:all"
+              icon={{ source: Icon.Globe }}
+            />
           </List.Dropdown.Section>
-
-
           {(savedSearches || []).length > 0 && (
             <List.Dropdown.Section title="Saved Searches">
               {(savedSearches || []).map((searchName) => (
@@ -437,9 +402,24 @@ export default function SearchPrompts({ initialSearchMode }: SearchPromptsProps 
                     onAction={() => {
                       setSelectedFilter("");
                       setSearchText("");
-                      setSelectedPacks(["personal"]);
+                      setSelectedPacks(["__all__"]);
                     }}
                     shortcut={{ modifiers: ["cmd", "shift"], key: "k" }}
+                  />
+                  <Action.Push
+                    title="Select Packs"
+                    icon={Icon.Box}
+                    target={
+                      <PackSelectorModal
+                        selectedPacks={selectedPacks}
+                        onSave={(packs) => {
+                          setSelectedPacks(packs);
+                          // Trigger revalidation by updating a benign filter value
+                          setSelectedFilter("");
+                        }}
+                      />
+                    }
+                    shortcut={{ modifiers: ["cmd", "shift"], key: "o" }}
                   />
                 </ActionPanel.Section>
                 <ActionPanel.Section title="Navigation">
