@@ -57,6 +57,12 @@ go build -o pocket-prompt main.go
 ./pocket-prompt --url-server --port 8080  # HTTP server
 ./pocket-prompt search "query"  # CLI search
 ./pocket-prompt boolean-search "ai AND agent"  # CLI boolean search
+
+# Import prompts and templates
+./pocket-prompt import claude-code  # Import from Claude Code installations
+./pocket-prompt import git-repo https://github.com/user/prompts.git  # Import from Git repository
+./pocket-prompt import git-repo https://github.com/user/prompts.git --preview  # Preview git import
+./pocket-prompt import backup.json  # Import from JSON file
 ```
 
 ### Extension Development Commands
