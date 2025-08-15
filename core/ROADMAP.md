@@ -32,6 +32,7 @@
 - **Entire app available via CLI (with no TUI)** - Create headless CLI mode for all application features
 
 ### Future Considerations
+- **Variable Support** - Add support for parameterized prompts with variable substitution, including form-based variable collection and template rendering
 - Additional platform support improvements
 - Performance optimizations
 - Extended search capabilities

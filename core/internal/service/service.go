@@ -489,6 +489,42 @@ func (s *Service) PullGitChanges() error {
 	return s.loadPrompts()
 }
 
+// CheckForGitChanges fetches from remote and checks if there are changes to pull
+func (s *Service) CheckForGitChanges() (bool, error) {
+	if !s.gitSync.IsEnabled() {
+		return false, nil // No changes if git sync is disabled
+	}
+	
+	// Fetch latest changes from remote (this is lightweight)
+	if err := s.gitSync.FetchChanges(); err != nil {
+		// If fetch fails, we can't determine if there are changes
+		// Log the error but don't consider it fatal
+		return false, nil
+	}
+	
+	// Check if we're behind the remote
+	return s.gitSync.IsBehindRemote()
+}
+
+// PullGitChangesIfNeeded checks for changes and pulls only if there are any
+func (s *Service) PullGitChangesIfNeeded() (bool, error) {
+	hasChanges, err := s.CheckForGitChanges()
+	if err != nil {
+		return false, err
+	}
+	
+	if !hasChanges {
+		return false, nil // No changes to pull
+	}
+	
+	// Pull the changes
+	if err := s.PullGitChanges(); err != nil {
+		return false, err
+	}
+	
+	return true, nil // Successfully pulled changes
+}
+
 // ForceGitSync attempts to re-enable git sync and recover from errors
 func (s *Service) ForceGitSync() error {
 	// Try to initialize git sync again
@@ -755,6 +791,58 @@ func (s *Service) PreviewClaudeCodeImport(options importer.ImportOptions) (*impo
 	return claudeImporter.Import(options)
 }
 
+// ImportFromGitRepository imports prompts and templates from a git repository
+func (s *Service) ImportFromGitRepository(options importer.GitImportOptions) (*importer.GitImportResult, error) {
+	gitImporter := importer.NewGitRepoImporter(s.storage.GetBaseDir())
+	
+	result, err := gitImporter.ImportFromGitRepo(options)
+	if err != nil {
+		return nil, fmt.Errorf("failed to import from git repository: %w", err)
+	}
+
+	// Save imported items to storage if not a dry run
+	if !options.DryRun {
+		// Save prompts
+		for _, prompt := range result.Prompts {
+			if err := s.savePromptWithGitConflictResolution(prompt, options); err != nil {
+				result.Errors = append(result.Errors, fmt.Errorf("failed to save prompt %s: %w", prompt.ID, err))
+			}
+		}
+
+		// Save templates
+		for _, template := range result.Templates {
+			if err := s.saveTemplateWithGitConflictResolution(template, options); err != nil {
+				result.Errors = append(result.Errors, fmt.Errorf("failed to save template %s: %w", template.ID, err))
+			}
+		}
+
+		// Refresh the prompts cache after import
+		if err := s.loadPrompts(); err != nil {
+			result.Errors = append(result.Errors, fmt.Errorf("failed to refresh prompts cache: %w", err))
+		}
+
+		// Sync to git if enabled and no errors occurred
+		if s.gitSync.IsEnabled() && len(result.Errors) == 0 {
+			commitMessage := fmt.Sprintf("Import from git repository %s: %d prompts, %d templates", 
+				result.RepoURL, len(result.Prompts), len(result.Templates))
+			
+			if err := s.gitSync.SyncChanges(commitMessage); err != nil {
+				// Don't fail the operation if git sync fails
+				result.Errors = append(result.Errors, fmt.Errorf("git sync failed after import: %w", err))
+			}
+		}
+	}
+
+	return result, nil
+}
+
+// PreviewGitRepositoryImport shows what would be imported from a git repository without actually importing
+func (s *Service) PreviewGitRepositoryImport(options importer.GitImportOptions) (*importer.GitImportResult, error) {
+	options.DryRun = true
+	gitImporter := importer.NewGitRepoImporter(s.storage.GetBaseDir())
+	return gitImporter.ImportFromGitRepo(options)
+}
+
 // savePromptWithConflictResolution handles conflict resolution when saving imported prompts
 func (s *Service) savePromptWithConflictResolution(prompt *models.Prompt, options importer.ImportOptions) error {
 	// Check if prompt already exists
@@ -821,6 +909,115 @@ func (s *Service) savePromptWithConflictResolution(prompt *models.Prompt, option
 
 // saveTemplateWithConflictResolution handles conflict resolution when saving imported templates
 func (s *Service) saveTemplateWithConflictResolution(template *models.Template, options importer.ImportOptions) error {
+	// Check if template already exists
+	existing, err := s.GetTemplate(template.ID)
+	if err == nil {
+		// Template exists, check if content has changed
+		contentChanged := existing.Content != template.Content
+		slotsChanged := !equalTemplateSlots(existing.Slots, template.Slots)
+		
+		// If nothing has changed, skip the update
+		if !contentChanged && !slotsChanged {
+			return nil // No changes, skip silently
+		}
+		
+		// Apply conflict resolution for changed content
+		if options.SkipExisting {
+			return nil // Skip without error even if content changed
+		}
+		
+		if !options.OverwriteExisting && !contentChanged && !slotsChanged {
+			return fmt.Errorf("template %s already exists (use --overwrite to overwrite or --skip-existing to skip)", template.ID)
+		}
+		
+		// Content has changed, increment version
+		if contentChanged || slotsChanged {
+			// Increment version
+			newVersion, err := s.incrementVersion(existing.Version)
+			if err != nil {
+				return fmt.Errorf("failed to increment version: %w", err)
+			}
+			template.Version = newVersion
+		} else {
+			// Keep the same version if nothing important changed
+			template.Version = existing.Version
+		}
+		
+		// Preserve creation time, update the rest
+		template.CreatedAt = existing.CreatedAt
+		template.UpdatedAt = time.Now()
+		template.FilePath = existing.FilePath // Keep the same file path
+	}
+	
+	return s.storage.SaveTemplate(template)
+}
+
+// savePromptWithGitConflictResolution handles conflict resolution when saving imported prompts from git repositories
+func (s *Service) savePromptWithGitConflictResolution(prompt *models.Prompt, options importer.GitImportOptions) error {
+	// Check if prompt already exists
+	existing, err := s.GetPrompt(prompt.ID)
+	if err == nil {
+		// Prompt exists, check if content has changed
+		contentChanged := existing.Content != prompt.Content
+		tagsChanged := !equalStringSlices(existing.Tags, prompt.Tags)
+		metadataChanged := !equalMetadata(existing.Metadata, prompt.Metadata)
+		
+		// If nothing has changed, skip the update
+		if !contentChanged && !tagsChanged && !metadataChanged {
+			return nil // No changes, skip silently
+		}
+		
+		// Apply conflict resolution for changed content
+		if options.SkipExisting {
+			return nil // Skip without error even if content changed
+		}
+		
+		if options.DeduplicateByPath {
+			// Check if it's the same source file
+			if existingPath, ok := existing.Metadata["original_path"].(string); ok {
+				if newPath, ok := prompt.Metadata["original_path"].(string); ok && existingPath == newPath {
+					// Same source file, but check if content changed
+					if !contentChanged && !tagsChanged && !metadataChanged {
+						return nil // Skip if no changes
+					}
+					// Continue to update if content changed
+				}
+			}
+		}
+		
+		if !options.OverwriteExisting && !contentChanged && !tagsChanged {
+			return fmt.Errorf("prompt %s already exists (use --overwrite to overwrite or --skip-existing to skip)", prompt.ID)
+		}
+		
+		// Content has changed, archive old version and increment version
+		if contentChanged || tagsChanged {
+			// Archive the old version
+			if err := s.archivePromptByTag(existing); err != nil {
+				return fmt.Errorf("failed to archive old version: %w", err)
+			}
+			
+			// Increment version
+			newVersion, err := s.incrementVersion(existing.Version)
+			if err != nil {
+				return fmt.Errorf("failed to increment version: %w", err)
+			}
+			prompt.Version = newVersion
+		} else {
+			// Keep the same version if only metadata changed
+			prompt.Version = existing.Version
+		}
+		
+		// Preserve creation time, update the rest
+		prompt.CreatedAt = existing.CreatedAt
+		prompt.UpdatedAt = time.Now()
+		prompt.FilePath = existing.FilePath // Keep the same file path
+	}
+	
+	return s.storage.SavePrompt(prompt)
+}
+
+// saveTemplateWithGitConflictResolution handles conflict resolution when saving imported templates from git repositories
+func (s *Service) saveTemplateWithGitConflictResolution(template *models.Template, options importer.GitImportOptions) error {
 	// Check if template already exists
 	existing, err := s.GetTemplate(template.ID)
 	if err == nil {

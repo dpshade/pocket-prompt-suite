@@ -43,17 +43,23 @@ type ImportOptions struct {
 
 // ImportResult contains the results of an import operation
 type ImportResult struct {
-	Prompts   []*models.Prompt // Imported prompts (from .claude/agents/ and .claude/commands/)
-	Workflows []*models.Prompt // Imported workflow prompts
-	Errors    []error          // Any errors encountered during import
+	Prompts        []*models.Prompt   // Imported prompts (from .claude/agents/ and .claude/commands/)
+	Templates      []*models.Template // Imported templates
+	Commands       []*models.Prompt   // Imported commands (alias for prompts)
+	Configurations []*models.Prompt   // Imported configuration files
+	Workflows      []*models.Prompt   // Imported workflow prompts
+	Errors         []error            // Any errors encountered during import
 }
 
 // Import performs the Claude Code import operation
 func (i *ClaudeCodeImporter) Import(options ImportOptions) (*ImportResult, error) {
 	result := &ImportResult{
-		Prompts:   []*models.Prompt{},
-		Workflows: []*models.Prompt{},
-		Errors:    []error{},
+		Prompts:        []*models.Prompt{},
+		Templates:      []*models.Template{},
+		Commands:       []*models.Prompt{},
+		Configurations: []*models.Prompt{},
+		Workflows:      []*models.Prompt{},
+		Errors:         []error{},
 	}
 
 	// Determine paths to scan
@@ -261,8 +267,6 @@ func (i *ClaudeCodeImporter) importAgentFile(filePath, agentsRoot string, option
 	// Extract title from first line of content if available
 	title := i.extractTitle(markdownContent, filePath)
 
-	// Extract variables for metadata (but don't process content)
-	variables := i.extractVariables(markdownContent)
 
 	now := time.Now()
 
@@ -275,9 +279,6 @@ func (i *ClaudeCodeImporter) importAgentFile(filePath, agentsRoot string, option
 		"tools":         tools,
 	}
 	
-	if len(variables) > 0 {
-		metadata["variables"] = variables
-	}
 
 	prompt := &models.Prompt{
 		ID:        id,
@@ -344,8 +345,6 @@ func (i *ClaudeCodeImporter) importCommandFile(filePath, commandsRoot string, op
 	// Extract title from first line of content if available
 	title := i.extractTitle(markdownContent, filePath)
 
-	// Extract variables for metadata (but don't process content)
-	variables := i.extractVariables(markdownContent)
 
 	now := time.Now()
 
@@ -357,9 +356,6 @@ func (i *ClaudeCodeImporter) importCommandFile(filePath, commandsRoot string, op
 		"allowed_tools": allowedTools,
 	}
 	
-	if len(variables) > 0 {
-		metadata["variables"] = variables
-	}
 
 	prompt := &models.Prompt{
 		ID:        id,
@@ -647,49 +643,6 @@ func (i *ClaudeCodeImporter) extractTitle(content, filePath string) string {
 	return strings.Title(strings.ReplaceAll(name, "-", " "))
 }
 
-// extractVariables finds template variables in content
-func (i *ClaudeCodeImporter) extractVariables(content string) []models.Slot {
-	var variables []models.Slot
-	seen := make(map[string]bool)
-	
-	// Look for $VARIABLE patterns
-	lines := strings.Split(content, "\n")
-	for _, line := range lines {
-		words := strings.Fields(line)
-		for _, word := range words {
-			if strings.HasPrefix(word, "$") && len(word) > 1 {
-				varName := strings.TrimPrefix(word, "$")
-				// Clean up variable name
-				varName = strings.Trim(varName, ".,!?;:")
-				
-				if !seen[varName] && varName != "" {
-					seen[varName] = true
-					variables = append(variables, models.Slot{
-						Name:        varName,
-						Required:    true,
-						Description: fmt.Sprintf("Variable extracted from Claude Code command: %s", varName),
-						Default:     "",
-					})
-				}
-			}
-		}
-	}
-	
-	return variables
-}
-
-// processContent converts $VARIABLE to {{VARIABLE}} format
-func (i *ClaudeCodeImporter) processContent(content string, variables []models.Slot) string {
-	result := content
-	
-	for _, variable := range variables {
-		oldPattern := "$" + variable.Name
-		newPattern := "{{" + variable.Name + "}}"
-		result = strings.ReplaceAll(result, oldPattern, newPattern)
-	}
-	
-	return result
-}
 
 // cleanTags removes empty and duplicate tags
 func (i *ClaudeCodeImporter) cleanTags(tags []string) []string {

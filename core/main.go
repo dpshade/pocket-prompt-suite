@@ -22,8 +22,8 @@ var version = "0.1.0"
 
 // killExistingServers finds and kills any running pocket-prompt URL server processes
 func killExistingServers() error {
-	// Find processes running pocket-prompt with --url-server
-	cmd := exec.Command("pgrep", "-f", "pocket-prompt.*--url-server")
+	// Find processes running pp with --url-server
+	cmd := exec.Command("pgrep", "-f", "pp.*--url-server")
 	output, err := cmd.Output()
 	if err != nil {
 		// No processes found or pgrep failed
@@ -69,10 +69,10 @@ OPTIONS:
     --help          Show this help information
     --version       Print version information  
     --init          Initialize a new prompt library
-    --url-server    Start URL server for iOS Shortcuts integration
+    --url-server    Start HTTP API server for integrations
     --restart       Kill any running URL server instances and restart
     --port          Port for URL server (default: 8080)
-    --sync-interval Git sync interval in minutes (default: 5, 0 to disable)
+    --sync-interval Git sync interval in minutes (0 for smart 30s default, -1 to disable)
     --no-git-sync   Disable periodic git synchronization
 
 COMMANDS:
@@ -84,7 +84,6 @@ COMMANDS:
     edit <id>          Edit an existing prompt
     delete, rm <id>    Delete a prompt
     copy <id>          Copy prompt to clipboard
-    render <id>        Render prompt with variables
     templates          List templates
     template           Template management (create, edit, delete, show)
     tags               List all tags
@@ -99,15 +98,15 @@ COMMANDS:
 EXAMPLES:
     pocket-prompt                                    # Start interactive mode
     pocket-prompt --init                             # Initialize new library
-    pocket-prompt --url-server                       # Start URL server for iOS
+    pocket-prompt --url-server                       # Start HTTP API server
     pocket-prompt --url-server --restart            # Kill existing servers and restart
     pocket-prompt --url-server --port 9000          # Start server on port 9000
-    pocket-prompt --url-server --sync-interval 1    # Sync every 1 minute
+    pocket-prompt --url-server --sync-interval 1    # Check every 1 minute
+    pocket-prompt --url-server --sync-interval 0    # Smart 30s checks (default)
     pocket-prompt --url-server --no-git-sync        # Disable git sync
     pocket-prompt list --format table               # List prompts in table format
     pocket-prompt search "machine learning"         # Search prompts
     pocket-prompt create my-prompt --title "Test"   # Create new prompt
-    pocket-prompt render my-prompt --var name=John  # Render with variables
     pocket-prompt template create my-template        # Create template
     pocket-prompt boolean-search run "(ai OR ml)"   # Boolean search
     pocket-prompt export all --output backup.json   # Export everything
@@ -135,10 +134,10 @@ func main() {
 	flag.BoolVar(&showVersion, "version", false, "Print version information")
 	flag.BoolVar(&initLib, "init", false, "Initialize a new prompt library")
 	flag.BoolVar(&showHelp, "help", false, "Show help information")
-	flag.BoolVar(&urlServer, "url-server", false, "Start URL server for iOS Shortcuts integration")
+	flag.BoolVar(&urlServer, "url-server", false, "Start HTTP API server for integrations")
 	flag.BoolVar(&restartServer, "restart", false, "Kill any running URL server instances and restart")
 	flag.IntVar(&port, "port", 8080, "Port for URL server")
-	flag.IntVar(&syncInterval, "sync-interval", 5, "Git sync interval in minutes (0 to disable)")
+	flag.IntVar(&syncInterval, "sync-interval", 0, "Git sync interval in minutes (0 for smart 30s default, negative to disable)")
 	flag.BoolVar(&noGitSync, "no-git-sync", false, "Disable periodic git synchronization")
 	flag.Parse()
 
@@ -183,15 +182,21 @@ func main() {
 			}
 		}
 		
-		fmt.Printf("Starting URL server for iOS Shortcuts integration...\n")
+		fmt.Printf("Starting HTTP API server for integrations...\n")
 		urlSrv := server.NewURLServer(svc, port)
 		
 		// Configure git sync
-		if noGitSync || syncInterval == 0 {
+		if noGitSync || syncInterval < 0 {
 			urlSrv.SetGitSync(false)
 		} else {
 			urlSrv.SetGitSync(true)
-			urlSrv.SetSyncInterval(time.Duration(syncInterval) * time.Minute)
+			if syncInterval == 0 {
+				// Use smart default: 30 seconds (frequent checks, efficient pulling)
+				urlSrv.SetSyncInterval(30 * time.Second)
+			} else {
+				// Use custom interval in minutes
+				urlSrv.SetSyncInterval(time.Duration(syncInterval) * time.Minute)
+			}
 		}
 		
 		if err := urlSrv.Start(); err != nil {

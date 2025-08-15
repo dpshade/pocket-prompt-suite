@@ -15,7 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Storage handles all file system operations for prompts, templates, and packs
+// Storage handles all file system operations for prompts and templates
 type Storage struct {
 	rootPath string
 	cache    *MetadataCache
@@ -50,7 +50,6 @@ func (s *Storage) InitLibrary() error {
 		filepath.Join(s.rootPath, "prompts"),
 		filepath.Join(s.rootPath, "archive"),
 		filepath.Join(s.rootPath, "templates"),
-		filepath.Join(s.rootPath, "packs"),
 		filepath.Join(s.rootPath, ".pocket-prompt"),
 		filepath.Join(s.rootPath, ".pocket-prompt", "cache"),
 	}

@@ -66,7 +66,7 @@ const (
 
 // NewCreateFormFromScratch creates a simplified empty form for starting from scratch
 func NewCreateFormFromScratch() *CreateForm {
-	inputs := make([]textinput.Model, 6) // Reduced from 7 after removing variables field
+	inputs := make([]textinput.Model, 6)
 
 	// ID field - will be auto-generated from title
 	inputs[idField] = textinput.New()
@@ -118,7 +118,7 @@ func NewCreateFormFromScratch() *CreateForm {
 
 // NewCreateForm creates a new prompt creation form with helpful placeholders
 func NewCreateForm() *CreateForm {
-	inputs := make([]textinput.Model, 6) // Reduced from 7 after removing variables field
+	inputs := make([]textinput.Model, 6)
 
 	// ID field
 	inputs[idField] = textinput.New()
@@ -189,6 +189,11 @@ func (f *CreateForm) Update(msg tea.Msg) tea.Cmd {
 		case "ctrl+s":
 			f.submitted = true
 			return nil
+		case "ctrl+space":
+			// Handle tag autocomplete explicitly for better reliability
+			if f.focused == tagsField && len(f.availableTags) > 0 {
+				// Pass through to textinput for proper autocomplete handling
+			}
 		case "down":
 			// Only handle down for field navigation when NOT in content field
 			if f.focused != contentField {
@@ -473,9 +478,10 @@ func (f *CreateForm) SetAvailableTags(tags []string) {
 		f.inputs[tagsField].SetSuggestions(tags)
 		f.inputs[tagsField].ShowSuggestions = true
 		
-		// Customize keybindings to avoid Tab conflict
+			// Customize keybindings for tag autocomplete
 		customKeyMap := textinput.DefaultKeyMap
-		customKeyMap.AcceptSuggestion = key.NewBinding(key.WithKeys("ctrl+space", "right"))
+		// Use multiple keybinds for better accessibility: Ctrl+Space, Right arrow, or Ctrl+Right
+		customKeyMap.AcceptSuggestion = key.NewBinding(key.WithKeys("ctrl+space", "right", "ctrl+right"))
 		f.inputs[tagsField].KeyMap = customKeyMap
 	}
 }

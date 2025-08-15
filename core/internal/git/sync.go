@@ -622,3 +622,18 @@ func (g *GitSync) resolveConflictsAutomatically() error {
 	fmt.Printf("Successfully resolved conflicts in %d files\n", len(conflictedFiles))
 	return nil
 }
+
+// FetchChanges fetches the latest changes from remote without merging
+func (g *GitSync) FetchChanges() error {
+	if !g.IsEnabled() {
+		return fmt.Errorf("git sync is not enabled")
+	}
+	
+	// Fetch with a reasonable timeout
+	return g.runGitCommandWithTimeout(30*time.Second, "fetch", "origin")
+}
+
+// IsBehindRemote checks if local branch is behind remote (public version)
+func (g *GitSync) IsBehindRemote() (bool, error) {
+	return g.isBehindRemote()
+}

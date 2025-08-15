@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/dpshade/pocket-prompt/internal/clipboard"
@@ -134,8 +135,6 @@ func (c *CLI) ExecuteCommand(args []string) error {
 		return c.deletePrompt(commandArgs)
 	case "copy":
 		return c.copyPrompt(commandArgs)
-	case "render":
-		return c.renderPrompt(commandArgs)
 	case "templates":
 		return c.handleTemplates(commandArgs)
 	case "template":
@@ -261,8 +260,6 @@ func (c *CLI) showPrompt(args []string) error {
 
 	id := args[0]
 	var format string
-	var render bool
-	var variables map[string]interface{}
 
 	// Parse flags
 	for i := 1; i < len(args); i++ {
@@ -273,50 +270,12 @@ func (c *CLI) showPrompt(args []string) error {
 				format = args[i+1]
 				i++
 			}
-		case "--render", "-r":
-			render = true
-		case "--var":
-			if i+1 < len(args) {
-				if variables == nil {
-					variables = make(map[string]interface{})
-				}
-				parts := strings.SplitN(args[i+1], "=", 2)
-				if len(parts) == 2 {
-					variables[parts[0]] = parts[1]
-				}
-				i++
-			}
 		}
 	}
 
 	prompt, err := c.service.GetPrompt(id)
 	if err != nil {
 		return fmt.Errorf("failed to get prompt: %w", err)
-	}
-
-	if render {
-		var template *models.Template
-		if prompt.TemplateRef != "" {
-			template, _ = c.service.GetTemplate(prompt.TemplateRef)
-		}
-
-		r := renderer.NewRenderer(prompt, template)
-		
-		switch format {
-		case "json":
-			content, err := r.RenderJSON(variables)
-			if err != nil {
-				return fmt.Errorf("failed to render JSON: %w", err)
-			}
-			fmt.Print(content)
-		default:
-			content, err := r.RenderText(variables)
-			if err != nil {
-				return fmt.Errorf("failed to render text: %w", err)
-			}
-			fmt.Print(content)
-		}
-		return nil
 	}
 
 	return c.formatSinglePrompt(prompt, format)
@@ -523,7 +482,6 @@ func (c *CLI) copyPrompt(args []string) error {
 
 	id := args[0]
 	var format string
-	var variables map[string]interface{}
 
 	// Parse flags
 	for i := 1; i < len(args); i++ {
@@ -532,17 +490,6 @@ func (c *CLI) copyPrompt(args []string) error {
 		case "--format", "-f":
 			if i+1 < len(args) {
 				format = args[i+1]
-				i++
-			}
-		case "--var":
-			if i+1 < len(args) {
-				if variables == nil {
-					variables = make(map[string]interface{})
-				}
-				parts := strings.SplitN(args[i+1], "=", 2)
-				if len(parts) == 2 {
-					variables[parts[0]] = parts[1]
-				}
 				i++
 			}
 		}
@@ -563,9 +510,9 @@ func (c *CLI) copyPrompt(args []string) error {
 	var content string
 	switch format {
 	case "json":
-		content, err = r.RenderJSON(variables)
+		content, err = r.RenderJSON(nil)
 	default:
-		content, err = r.RenderText(variables)
+		content, err = r.RenderText(nil)
 	}
 
 	if err != nil {
@@ -582,68 +529,6 @@ func (c *CLI) copyPrompt(args []string) error {
 	return nil
 }
 
-// renderPrompt renders a prompt with variables
-func (c *CLI) renderPrompt(args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("render requires a prompt ID")
-	}
-
-	id := args[0]
-	var format string
-	var variables map[string]interface{}
-
-	// Parse flags
-	for i := 1; i < len(args); i++ {
-		arg := args[i]
-		switch arg {
-		case "--format", "-f":
-			if i+1 < len(args) {
-				format = args[i+1]
-				i++
-			}
-		case "--var":
-			if i+1 < len(args) {
-				if variables == nil {
-					variables = make(map[string]interface{})
-				}
-				parts := strings.SplitN(args[i+1], "=", 2)
-				if len(parts) == 2 {
-					variables[parts[0]] = parts[1]
-				}
-				i++
-			}
-		}
-	}
-
-	prompt, err := c.service.GetPrompt(id)
-	if err != nil {
-		return fmt.Errorf("failed to get prompt: %w", err)
-	}
-
-	var template *models.Template
-	if prompt.TemplateRef != "" {
-		template, _ = c.service.GetTemplate(prompt.TemplateRef)
-	}
-
-	r := renderer.NewRenderer(prompt, template)
-	
-	switch format {
-	case "json":
-		content, err := r.RenderJSON(variables)
-		if err != nil {
-			return fmt.Errorf("failed to render JSON: %w", err)
-		}
-		fmt.Print(content)
-	default:
-		content, err := r.RenderText(variables)
-		if err != nil {
-			return fmt.Errorf("failed to render text: %w", err)
-		}
-		fmt.Print(content)
-	}
-
-	return nil
-}
 
 // formatOutput formats prompts for output
 func (c *CLI) formatOutput(prompts []*models.Prompt, format string) error {
@@ -912,7 +797,6 @@ Commands:
   edit <id>             Edit an existing prompt
   delete, rm <id>       Delete a prompt
   copy <id>             Copy prompt to clipboard
-  render <id>           Render prompt with variables
   templates             List templates
   template              Template management (create, edit, delete, show)
   tags                  List all tags
@@ -1472,7 +1356,7 @@ func (c *CLI) exportData(data interface{}, format, outputFile string) error {
 // handleImport handles import operations
 func (c *CLI) handleImport(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("import requires a subcommand or file path\n\nUsage:\n  pocket-prompt import claude-code [options]  # Import from Claude Code\n  pocket-prompt import <file> [options]       # Import from JSON file")
+		return fmt.Errorf("import requires a subcommand or file path\n\nUsage:\n  pocket-prompt import claude-code [options]  # Import from Claude Code\n  pocket-prompt import git-repo <repo-url> [options]  # Import from Git repository\n  pocket-prompt import <file> [options]       # Import from JSON file")
 	}
 
 	subcommand := args[0]
@@ -1480,6 +1364,11 @@ func (c *CLI) handleImport(args []string) error {
 	// Handle Claude Code import
 	if subcommand == "claude-code" {
 		return c.handleClaudeCodeImport(args[1:])
+	}
+	
+	// Handle Git repository import
+	if subcommand == "git-repo" {
+		return c.handleGitRepoImport(args[1:])
 	}
 	
 	// Handle file import (existing functionality)
@@ -1644,6 +1533,115 @@ func (c *CLI) handleFileImport(args []string) error {
 	return nil
 }
 
+// handleGitRepoImport handles importing from git repositories
+func (c *CLI) handleGitRepoImport(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("git-repo import requires a repository URL")
+	}
+
+	repoURL := args[0]
+	options := importer.GitImportOptions{
+		RepoURL: repoURL,
+	}
+	
+	// Parse flags
+	for i := 1; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--owner-tag":
+			if i+1 < len(args) {
+				options.OwnerTag = args[i+1]
+				i++
+			}
+		case "--temp-dir":
+			if i+1 < len(args) {
+				options.TempDir = args[i+1]
+				i++
+			}
+		case "--branch":
+			if i+1 < len(args) {
+				options.Branch = args[i+1]
+				i++
+			}
+		case "--depth":
+			if i+1 < len(args) {
+				if depth, err := strconv.Atoi(args[i+1]); err == nil {
+					options.Depth = depth
+				}
+				i++
+			}
+		case "--preview", "--dry-run":
+			options.DryRun = true
+		case "--tags":
+			if i+1 < len(args) {
+				tags := strings.Split(args[i+1], ",")
+				for j := range tags {
+					tags[j] = strings.TrimSpace(tags[j])
+				}
+				options.Tags = tags
+				i++
+			}
+		case "--overwrite":
+			options.OverwriteExisting = true
+		case "--skip-existing":
+			options.SkipExisting = true
+		case "--deduplicate":
+			options.DeduplicateByPath = true
+		}
+	}
+
+	// Perform the import
+	result, err := c.service.ImportFromGitRepository(options)
+	if err != nil {
+		return fmt.Errorf("failed to import from git repository: %w", err)
+	}
+
+	// Display results
+	if options.DryRun {
+		fmt.Println("Git Repository Import Preview:")
+		fmt.Println("===============================")
+	} else {
+		fmt.Println("Git Repository Import Complete:")
+		fmt.Println("================================")
+	}
+
+	fmt.Printf("Repository: %s\n", result.RepoURL)
+	if result.Branch != "" {
+		fmt.Printf("Branch: %s\n", result.Branch)
+	}
+	fmt.Printf("Owner Tag: %s\n", result.OwnerTag)
+
+	if len(result.Prompts) > 0 {
+		fmt.Printf("Prompts: %d\n", len(result.Prompts))
+		for _, prompt := range result.Prompts {
+			fmt.Printf("  - %s (%s)\n", prompt.Name, prompt.ID)
+		}
+	}
+
+	if len(result.Templates) > 0 {
+		fmt.Printf("Templates: %d\n", len(result.Templates))
+		for _, template := range result.Templates {
+			fmt.Printf("  - %s (%s)\n", template.Name, template.ID)
+		}
+	}
+
+	if len(result.Errors) > 0 {
+		fmt.Printf("\nErrors encountered: %d\n", len(result.Errors))
+		for _, err := range result.Errors {
+			fmt.Printf("  - %v\n", err)
+		}
+	}
+
+	if options.DryRun {
+		fmt.Printf("\nTo actually import these items, run the same command without --preview\n")
+	} else {
+		total := len(result.Prompts) + len(result.Templates)
+		fmt.Printf("\nSuccessfully imported %d items from Git repository\n", total)
+	}
+
+	return nil
+}
+
 func (c *CLI) printHelp(args []string) error {
 	if len(args) == 0 {
 		return c.printUsage()
@@ -1764,8 +1762,9 @@ Examples:
 		fmt.Println(`import - Import prompts and templates
 
 Usage: 
-  pocket-prompt import claude-code [options]  # Import from Claude Code
-  pocket-prompt import <file> [options]       # Import from JSON file
+  pocket-prompt import claude-code [options]   # Import from Claude Code
+  pocket-prompt import git-repo <repo-url> [options]  # Import from Git repository
+  pocket-prompt import <file> [options]        # Import from JSON file
 
 Claude Code Import Options:
   --path <path>           Directory to import from (default: current dir + ~/.claude)
@@ -1773,6 +1772,17 @@ Claude Code Import Options:
   --commands-only         Import only command files (.claude/commands/ and .claude/agents/)
   --workflows-only        Import only GitHub Actions workflows
   --config-only           Import only configuration files (CLAUDE.md)
+  --preview, --dry-run    Preview what would be imported without importing
+  --tags <tag1,tag2>      Additional tags to apply to imported items
+  --overwrite             Overwrite existing prompts/templates with same ID
+  --skip-existing         Skip items that already exist (no conflict errors)
+  --deduplicate           Skip duplicates based on original file path
+
+Git Repository Import Options:
+  --owner-tag <tag>       Override owner tag (default: username from URL)
+  --temp-dir <path>       Temporary directory for cloning (default: system temp)
+  --branch <name>         Import from specific branch (default: repository default)
+  --depth <number>        Shallow clone depth (default: full clone)
   --preview, --dry-run    Preview what would be imported without importing
   --tags <tag1,tag2>      Additional tags to apply to imported items
   --overwrite             Overwrite existing prompts/templates with same ID
@@ -1795,20 +1805,20 @@ Examples:
   # Import from specific directory + ~/.claude directories
   pocket-prompt import claude-code --path /path/to/project --user
 
+  # Import from Git repository
+  pocket-prompt import git-repo https://github.com/user/prompts.git
+
+  # Import from Git repository with custom owner tag
+  pocket-prompt import git-repo https://github.com/user/prompts.git --owner-tag "team-ai"
+
+  # Preview Git repository import
+  pocket-prompt import git-repo https://github.com/user/prompts.git --preview
+
+  # Import from specific branch with additional tags
+  pocket-prompt import git-repo https://github.com/user/prompts.git --branch "development" --tags "experimental,dev"
+
   # Import from JSON backup
   pocket-prompt import backup.json --format json`)
-
-	case "render":
-		fmt.Println(`render - Render prompt with variables
-
-Usage: pocket-prompt render <id> [options]
-
-Options:
-  --format, -f <format>  Output format (text, json)
-  --var <name=value>     Set variable value (can be used multiple times)
-
-Example:
-  pocket-prompt render my-prompt --var name=John --var age=30`)
 
 	case "git":
 		fmt.Println(`git - Git synchronization

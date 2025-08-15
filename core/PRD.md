@@ -37,8 +37,6 @@ What: Roughly, what does this look like in the product?
   - Templates 
     - Markdown scaffolds with named slots (e.g., identity, steps, output_instructions, tone/voice/personality/style/structure).
     - Enforce structure/tone via linter; minimal templating (substitution, loops, simple conditionals).
-  - Packs 
-    - Lightweight indexes that group prompts by purpose and pin versions for teams.
 - Primary TUI (no chat, no execution) 
   - Library browser with fuzzy search, tag filters, and favorites.
   - Preview pane renders Markdown; variable form to fill required fields before rendering.
@@ -57,7 +55,6 @@ What: Roughly, what does this look like in the product?
   - pp copy <prompt> --var k=v …              # renders and copies to clipboard (no stdout noise)
   - pp template list | preview
   - pp lint <prompt>
-  - pp pack create | list | inspect
   - pp hash|sign|verify <artifact>
   - pp publish --dns | pp fetch --dns
 
@@ -92,7 +89,7 @@ Principles and Non-Goals
 
 Scope
 - v1 (ship this) 
-  - Artifacts: Prompts, Templates, Packs with schemas.
+  - Artifacts: Prompts, Templates with schemas.
   - TUI: browse/search, preview, variable forms, copy, export, save-as, favorites.
   - CLI: render, copy, preview, lint, export, hash/sign/verify, publish/fetch via DNS TXT.
   - Renderer: minimal templating (substitution/loops), safe escaping.
@@ -102,12 +99,12 @@ Scope
 - Later (v1.5–v2) 
   - Fabric importer; schema migration tools (semver helpers, diff/compare).
   - Encrypted-at-rest option (OS keychain integration) for sensitive libraries.
-  - Team curation features (pack policies, review helpers).
+  - Team curation features (review helpers).
   - Optional AO/permaweb index publishing for immutable snapshots.
 
 Architecture Overview
 - Storage layout 
-  - prompts/**.md, templates/**.md, packs/**.yml, .pocket-prompt/index.json, .pocket-prompt/cache/
+  - prompts/**.md, templates/**.md, .pocket-prompt/index.json, .pocket-prompt/cache/
 - Renderer 
   - Deterministic composition of template + slots + variables into: 
     - Plain prompt text.
@@ -182,7 +179,7 @@ Risks and mitigations
 
 How: What is the experiment plan?
 - Week 1: Core schemas + renderer 
-  - Implement Prompts/Templates/Packs, deterministic render, variable typing/defaults.
+  - Implement Prompts/Templates, deterministic render, variable typing/defaults.
 - Week 2: TUI foundation 
   - Bubble Tea app with library, preview, and variables panes; Glow previews; Lip Gloss theming.
 - Week 3: Copy/export + linter 

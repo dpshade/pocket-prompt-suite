@@ -35,7 +35,7 @@ Pocket Prompt is your **unified command center** for all LLM interactions:
 ### 🚀 **Multi-Interface Access**
 - **TUI**: Fast, keyboard-driven terminal interface
 - **CLI**: Headless automation for scripts and CI/CD
-- **HTTP API**: iOS Shortcuts, web apps, and integrations
+- **HTTP API**: Web apps, automation, and integrations
 - **Git Sync**: Multi-device access with version control
 
 ### 💾 **Own Your Context, Ensure Portability**
@@ -86,8 +86,8 @@ pocket-prompt render analysis-v1 --var data=Q3-metrics > results-v1.txt
 pocket-prompt render analysis-v2 --var data=Q3-metrics > results-v2.txt
 ```
 
-### 📱 **iOS Power Users**
-- **Shortcuts Integration**: Voice → Search → Render → ChatGPT
+### 📱 **Mobile & Automation Users**
+- **HTTP API Integration**: Voice → Search → Render → AI Services
 - **URL-based Access**: `http://localhost:8080/pocket-prompt/render/my-prompt?var1=value`  
 - **Offline-First**: No API keys or internet required
 
@@ -174,7 +174,7 @@ pocket-prompt list              # List all prompts
 pocket-prompt search "AI"       # Search for prompts
 pocket-prompt show prompt-id    # Display a specific prompt
 pocket-prompt copy prompt-id    # Copy to clipboard
-pocket-prompt --url-server      # Start HTTP API for iOS Shortcuts
+pocket-prompt --url-server      # Start HTTP API server
 ```
 
 3. Navigate with keyboard shortcuts:
@@ -260,7 +260,6 @@ Please provide:
 ~/.pocket-prompt/
 ├── prompts/       # Your prompt files
 ├── templates/     # Reusable templates
-├── packs/         # Curated collections
 └── .pocket-prompt/
     ├── index.json # Search index
     └── cache/     # Rendered prompts cache
@@ -537,7 +536,7 @@ pocket-prompt git pull        # Pull remote changes
 
 ## HTTP API Server
 
-Pocket Prompt includes a built-in HTTP API server perfect for **iOS Shortcuts integration** and automation workflows. The server provides URL-based access to all prompt operations with clipboard-based responses for seamless mobile integration.
+Pocket Prompt includes a built-in HTTP API server perfect for **automation workflows** and integrations. The server provides URL-based access to all prompt operations with responses optimized for seamless integration.
 
 ### Starting the Server
 
@@ -549,7 +548,7 @@ pocket-prompt --url-server --port 9000        # Start on custom port
 The server provides helpful startup information:
 ```
 URL server starting on http://localhost:8080
-iOS Shortcuts can now call URLs like:
+API endpoints available:
   http://localhost:8080/pocket-prompt/render/my-prompt-id
   http://localhost:8080/pocket-prompt/search?q=AI
   http://localhost:8080/pocket-prompt/boolean?expr=ai+AND+analysis
@@ -614,9 +613,9 @@ Control output format with the `format` parameter:
 - `format=ids` - Just prompt/template IDs
 - `format=table` - Formatted table view
 
-### iOS Shortcuts Integration
+### Mobile & Automation Integration
 
-The API returns content directly in HTTP responses, perfect for iOS Shortcuts. **Note**: Pocket Prompt prepares and delivers your context - you then use it with your preferred AI service (ChatGPT, Claude, etc.):
+The API returns content directly in HTTP responses, perfect for automation tools. **Note**: Pocket Prompt prepares and delivers your context - you then use it with your preferred AI service (ChatGPT, Claude, etc.):
 
 #### Basic Prompt Access
 1. **Get Contents of URL**: `http://localhost:8080/pocket-prompt/render/my-prompt`
@@ -640,7 +639,7 @@ The API returns content directly in HTTP responses, perfect for iOS Shortcuts. *
 3. **Get Contents of URL**: `http://localhost:8080/pocket-prompt/render/analysis?topic=[input1]&depth=[input2]`
 4. **Use response content** - customized prompt ready for AI
 
-### Example iOS Shortcuts
+### Example Automation Workflows
 
 **Quick AI Prompt**: 
 - Choose from predefined prompt list → Render → Copy to AI app
@@ -649,7 +648,7 @@ The API returns content directly in HTTP responses, perfect for iOS Shortcuts. *
 - Voice input "Search for coding prompts" → API search → Select result → Render
 
 **Dynamic Prompt Builder**:
-- Input variables via Shortcuts → Render with variables → Ready for AI
+- Input variables via automation → Render with variables → Ready for AI
 
 ### Security & Local Access
 
@@ -683,9 +682,8 @@ GET /health
 - [x] Export formats (JSON, plain text)
 - [x] Advanced Git synchronization
 - [x] Comprehensive UI design system
-- [x] HTTP API server for iOS Shortcuts integration
+- [x] HTTP API server for automation integration
 - [ ] Linter for prompt validation
-- [ ] Pack management
 - [ ] DNS TXT publishing
 - [ ] Signature verification
 

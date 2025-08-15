@@ -1684,7 +1684,7 @@ func (m Model) renderCreateFromScratchView() string {
 
 	// Tags field
 	tagsLabel := StyleFormLabel.Render("Tags:")
-	tagsHelp := StyleFormHelp.Render("Use comma-separated values for organization and discovery")
+	tagsHelp := StyleFormHelp.Render("Use comma-separated values for organization and discovery • Ctrl+Space/→ to autocomplete")
 	formFields = append(formFields, tagsLabel, m.createForm.inputs[tagsField].View(), tagsHelp, "")
 
 	// Template reference field
@@ -1776,7 +1776,7 @@ func (m Model) renderEditPromptView() string {
 
 	// Tags field
 	tagsLabel := StyleFormLabel.Render("Tags:")
-	tagsHelp := StyleFormHelp.Render("Use comma-separated values for organization and discovery")
+	tagsHelp := StyleFormHelp.Render("Use comma-separated values for organization and discovery • Ctrl+Space/→ to autocomplete")
 	formFields = append(formFields, tagsLabel, m.createForm.inputs[tagsField].View(), tagsHelp, "")
 
 	// Template reference field
@@ -2312,7 +2312,6 @@ func (m *Model) renderPreview() error {
 	// Create a renderer for the prompt
 	r := renderer.NewRenderer(m.selectedPrompt, nil)
 
-	// Render with no variables
 	rendered, err := r.RenderText(nil)
 	if err != nil {
 		// Show the raw content if rendering fails

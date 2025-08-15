@@ -25,7 +25,6 @@ Pocket Prompt is a terminal-based application for managing AI prompts and templa
 ~/.pocket-prompt/          # Default storage directory (configurable via POCKET_PROMPT_DIR)
 ├── prompts/               # User prompts as .md files
 ├── templates/             # Reusable templates as .md files  
-├── packs/                 # Curated collections (planned)
 ├── archive/               # Archived prompt versions
 └── .pocket-prompt/
     ├── index.json         # Search index
@@ -94,6 +93,7 @@ POCKET_PROMPT_DIR=./test-library go test ./...
 - **Version Control**: Automatic versioning with semantic version increments
 - **Archival**: Old versions are automatically archived when prompts are updated
 - **Git Sync**: Optional synchronization with remote Git repositories for backup
+- **Git Repository Import**: Import prompts and templates from public Git repositories with automatic owner tagging
 - **Variable Substitution**: Templates support typed variables with defaults
 - **Export Formats**: Copy as plain text or JSON message format for LLM APIs
 - **Contrast-Aware Rendering**: Automatic terminal background detection ensures optimal text contrast when previewing prompts
@@ -151,6 +151,43 @@ Tests use a separate test library directory to avoid interfering with user data.
 - Git command execution for synchronization
 - File system watching for live updates
 - Environment variable configuration
+
+## Git Repository Import
+
+The application supports importing prompts and templates directly from public Git repositories that follow the expected pocket-prompt structure.
+
+### Repository Structure Requirements
+The target repository should contain:
+- `prompts/` directory with `.md` files containing YAML frontmatter
+- `templates/` directory with template `.md` files (optional)
+- Proper YAML frontmatter with required fields (id, version, title, etc.)
+
+### Import Features
+- **Automatic URL Parsing**: Extracts owner/username from GitHub, GitLab, and other Git hosting URLs
+- **Owner Tagging**: Automatically adds owner tag (e.g., "dpshade" from `github.com/dpshade/repo.git`)
+- **Repository Validation**: Verifies repository structure before importing
+- **Conflict Resolution**: Supports `--overwrite`, `--skip-existing`, and `--deduplicate` options
+- **Shallow Cloning**: Configurable clone depth for large repositories
+- **Branch Selection**: Import from specific branches
+- **Preview Mode**: `--preview` flag to inspect imports before executing
+
+### Usage Examples
+```bash
+# Basic import from public repository
+./pocket-prompt import git-repo https://github.com/user/prompts.git
+
+# Preview import before executing
+./pocket-prompt import git-repo https://github.com/user/prompts.git --preview
+
+# Import with custom owner tag and additional tags
+./pocket-prompt import git-repo https://github.com/user/prompts.git --owner-tag "team-ai" --tags "external,reference"
+
+# Import from specific branch with shallow clone
+./pocket-prompt import git-repo https://github.com/user/prompts.git --branch "development" --depth 1
+
+# Skip existing prompts to avoid conflicts
+./pocket-prompt import git-repo https://github.com/user/prompts.git --skip-existing
+```
 
 ## Configuration
 
