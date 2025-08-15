@@ -101,3 +101,10 @@ raycast-extension/raycast-env.d.ts
 # Local development
 .local/
 server.log
+
+# Personal prompt libraries (keep these local)
+core/archive/
+core/prompts/
+core/templates/
+core/packs/
+core/test-library/
