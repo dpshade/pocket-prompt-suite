@@ -47,16 +47,16 @@ What: Roughly, what does this look like in the product?
   - Export menu for provider-shaped JSON or plain text (for external tools to execute).
   - Status bar shows artifact id@version, content hash, and template pin.
 - Supplemental CLI (for piping/scripting) 
-  - pp init
-  - pp add (from template)
-  - pp list | pp search <query>
-  - pp preview <prompt>
-  - pp render <prompt> --var k=v …            # prints rendered prompt to stdout
-  - pp copy <prompt> --var k=v …              # renders and copies to clipboard (no stdout noise)
-  - pp template list | preview
-  - pp lint <prompt>
-  - pp hash|sign|verify <artifact>
-  - pp publish --dns | pp fetch --dns
+  - pkt init
+  - pkt add (from template)
+  - pkt list | pkt search <query>
+  - pkt preview <prompt>
+  - pkt render <prompt> --var k=v …            # prints rendered prompt to stdout
+  - pkt copy <prompt> --var k=v …              # renders and copies to clipboard (no stdout noise)
+  - pkt template list | preview
+  - pkt lint <prompt>
+  - pkt hash|sign|verify <artifact>
+  - pkt publish --dns | pkt fetch --dns
 
 Charmbracelet stack for first-class TUI/CLI UX
 - Bubble Tea 
@@ -145,10 +145,10 @@ TUI user flows and keybinds (defaults)
 
 CLI examples
 - Pipe into other tools 
-  - pp render prompts/research/insight-extractor.md --var topic="Naval on leverage" | tee prompt.txt
-  - pp render prompts/summary.md --var source="$(cat [notes.md](http://notes.md))" | pbcopy
+  - pkt render prompts/research/insight-extractor.md --var topic="Naval on leverage" | tee prompt.txt
+  - pkt render prompts/summary.md --var source="$(cat [notes.md](http://notes.md))" | pbcopy
 - Copy directly 
-  - pp copy prompts/analysis.md --var min_ideas=25
+  - pkt copy prompts/analysis.md --var min_ideas=25
 
 Templates (built-in examples)
 - Analysis template 
@@ -185,7 +185,7 @@ How: What is the experiment plan?
 - Week 3: Copy/export + linter 
   - Clipboard integrations (local + OSC52), export menu, save-as; linter rules and error surfaces.
 - Week 4: CLI + integrity 
-  - pp render/copy/preview/lint/export/hash/sign/verify; artifact hashes; optional signatures.
+  - pkt render/copy/preview/lint/export/hash/sign/verify; artifact hashes; optional signatures.
 - Week 5: DNS TXT bootstrap (optional) 
   - Publish signed indices/pointers; fetch, verify, and import flow; docs and examples.
 - Week 6: Polish and docs 

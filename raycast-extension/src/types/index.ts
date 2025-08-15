@@ -6,20 +6,12 @@ export interface PocketPrompt {
   Tags: string[];
   Version: string;
   TemplateRef?: string;
-  Variables?: PromptVariable[];
+  Pack?: string;
   UpdatedAt: string;
   CreatedAt: string;
   FilePath: string;
   ContentHash: string;
   Metadata?: any;
-}
-
-export interface PromptVariable {
-  name: string;
-  type: "string" | "number" | "boolean" | "list";
-  required: boolean;
-  default?: string | number | boolean;
-  description?: string;
 }
 
 export interface PocketPromptTemplate {
@@ -48,13 +40,18 @@ export interface ServerStatus {
   service: string;
 }
 
-export interface RenderParams {
-  [key: string]: string | number | boolean;
+export interface BooleanExpression {
+  type: "tag" | "and" | "or" | "not";
+  value: string | BooleanExpression[];
 }
 
 export interface SavedSearch {
   name: string;
-  expression: string;
+  description?: string;
+  expression: BooleanExpression;
+  text_query?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface BooleanSearchMode {

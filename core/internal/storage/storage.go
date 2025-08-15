@@ -161,9 +161,61 @@ func (s *Storage) SaveTemplate(template *models.Template) error {
 	return nil
 }
 
-// ListPrompts returns all prompts in the library (excluding archived prompts)
+// ListPrompts returns all prompts in the personal library (excluding archived prompts)
 func (s *Storage) ListPrompts() ([]*models.Prompt, error) {
 	return s.listPromptsFromDir("prompts")
+}
+
+// ListPromptsByPack returns prompts from a specific pack
+func (s *Storage) ListPromptsByPack(packName string) ([]*models.Prompt, error) {
+	if packName == "" || packName == "personal" {
+		// Return personal library prompts
+		return s.ListPrompts()
+	}
+	
+	// Return prompts from the specified pack
+	packPromptsPath := filepath.Join("packs", packName, "prompts")
+	return s.listPromptsFromDir(packPromptsPath)
+}
+
+// listPackPrompts returns prompts from all installed pack directories
+func (s *Storage) listPackPrompts() ([]*models.Prompt, error) {
+	var allPackPrompts []*models.Prompt
+	
+	// Check if packs directory exists
+	packsDir := filepath.Join(s.rootPath, "packs")
+	if _, err := os.Stat(packsDir); os.IsNotExist(err) {
+		// No packs directory, return empty slice
+		return allPackPrompts, nil
+	}
+	
+	// List all pack directories
+	packDirs, err := os.ReadDir(packsDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read packs directory: %w", err)
+	}
+	
+	// Scan each pack's prompts directory
+	for _, packDir := range packDirs {
+		if !packDir.IsDir() {
+			continue
+		}
+		
+		packName := packDir.Name()
+		packPromptsPath := filepath.Join("packs", packName, "prompts")
+		
+		// Get prompts from this pack
+		packPrompts, err := s.listPromptsFromDir(packPromptsPath)
+		if err != nil {
+			// Log warning but continue with other packs
+			fmt.Printf("Warning: failed to list prompts from pack '%s': %v\n", packName, err)
+			continue
+		}
+		
+		allPackPrompts = append(allPackPrompts, packPrompts...)
+	}
+	
+	return allPackPrompts, nil
 }
 
 // listPromptsFromDir returns prompts from a specific directory with caching

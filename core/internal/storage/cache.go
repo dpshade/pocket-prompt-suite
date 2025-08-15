@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dpshade/pocket-prompt/internal/models"
@@ -33,6 +34,7 @@ type MetadataCache struct {
 	cacheDir  string
 	cacheFile string
 	metadata  map[string]*PromptMetadata
+	mu        sync.RWMutex // Protects metadata map from concurrent access
 }
 
 // NewMetadataCache creates a new metadata cache
@@ -62,18 +64,21 @@ func (c *MetadataCache) Load() error {
 		return fmt.Errorf("failed to read cache file: %w", err)
 	}
 
+	c.mu.Lock()
 	if err := json.Unmarshal(data, &c.metadata); err != nil {
 		// If cache is corrupted, start fresh
 		c.metadata = make(map[string]*PromptMetadata)
-		return nil
 	}
+	c.mu.Unlock()
 
 	return nil
 }
 
 // Save saves the metadata cache to disk
 func (c *MetadataCache) Save() error {
+	c.mu.RLock()
 	data, err := json.MarshalIndent(c.metadata, "", "  ")
+	c.mu.RUnlock()
 	if err != nil {
 		return fmt.Errorf("failed to marshal cache: %w", err)
 	}
@@ -87,7 +92,9 @@ func (c *MetadataCache) Save() error {
 
 // Get retrieves metadata for a file, checking if cache is valid
 func (c *MetadataCache) Get(filePath string, fileInfo os.FileInfo) (*PromptMetadata, bool) {
+	c.mu.RLock()
 	cached, exists := c.metadata[filePath]
+	c.mu.RUnlock()
 	if !exists {
 		return nil, false
 	}
@@ -109,6 +116,7 @@ func (c *MetadataCache) Set(relPath string, fullPath string, fileInfo os.FileInf
 		fileHash = hex.EncodeToString(hash[:])
 	}
 
+	c.mu.Lock()
 	c.metadata[relPath] = &PromptMetadata{
 		ID:          prompt.ID,
 		Version:     prompt.Version,
@@ -122,6 +130,7 @@ func (c *MetadataCache) Set(relPath string, fullPath string, fileInfo os.FileInf
 		ModTime:     fileInfo.ModTime(),
 		FileHash:    fileHash,
 	}
+	c.mu.Unlock()
 }
 
 // ToPrompt converts cached metadata back to a Prompt (without content)
@@ -142,11 +151,13 @@ func (m *PromptMetadata) ToPrompt() *models.Prompt {
 
 // Cleanup removes cache entries for files that no longer exist
 func (c *MetadataCache) Cleanup(existingFiles map[string]bool) {
+	c.mu.Lock()
 	for filePath := range c.metadata {
 		if !existingFiles[filePath] {
 			delete(c.metadata, filePath)
 		}
 	}
+	c.mu.Unlock()
 }
 
 // IsArchived checks if a metadata entry represents an archived prompt

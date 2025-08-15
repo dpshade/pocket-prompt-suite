@@ -22,8 +22,8 @@ var version = "0.1.0"
 
 // killExistingServers finds and kills any running pocket-prompt URL server processes
 func killExistingServers() error {
-	// Find processes running pp with --url-server
-	cmd := exec.Command("pgrep", "-f", "pp.*--url-server")
+	// Find processes running pkt with --url-server
+	cmd := exec.Command("pgrep", "-f", "pkt.*--url-server")
 	output, err := cmd.Output()
 	if err != nil {
 		// No processes found or pgrep failed
@@ -33,27 +33,27 @@ func killExistingServers() error {
 	// Parse PIDs and kill them
 	pids := strings.Fields(string(output))
 	currentPID := os.Getpid()
-	
+
 	for _, pidStr := range pids {
 		pid, err := strconv.Atoi(pidStr)
 		if err != nil {
 			continue
 		}
-		
+
 		// Don't kill ourselves
 		if pid == currentPID {
 			continue
 		}
-		
+
 		fmt.Printf("Killing existing server process (PID %d)...\n", pid)
-		
+
 		// Send SIGTERM first for graceful shutdown
 		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
 			// If SIGTERM fails, try SIGKILL
 			syscall.Kill(pid, syscall.SIGKILL)
 		}
 	}
-	
+
 	// Give processes time to shut down
 	time.Sleep(1 * time.Second)
 	return nil
@@ -181,10 +181,10 @@ func main() {
 				fmt.Printf("Warning: Error killing existing servers: %v\n", err)
 			}
 		}
-		
+
 		fmt.Printf("Starting HTTP API server for integrations...\n")
 		urlSrv := server.NewURLServer(svc, port)
-		
+
 		// Configure git sync
 		if noGitSync || syncInterval < 0 {
 			urlSrv.SetGitSync(false)
@@ -198,7 +198,7 @@ func main() {
 				urlSrv.SetSyncInterval(time.Duration(syncInterval) * time.Minute)
 			}
 		}
-		
+
 		if err := urlSrv.Start(); err != nil {
 			fmt.Printf("Error starting URL server: %v\n", err)
 			os.Exit(1)

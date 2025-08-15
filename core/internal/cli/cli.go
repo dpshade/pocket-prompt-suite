@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/dpshade/pocket-prompt/internal/clipboard"
+	"github.com/dpshade/pocket-prompt/internal/config"
 	"github.com/dpshade/pocket-prompt/internal/importer"
 	"github.com/dpshade/pocket-prompt/internal/models"
 	"github.com/dpshade/pocket-prompt/internal/renderer"
@@ -153,6 +154,8 @@ func (c *CLI) ExecuteCommand(args []string) error {
 		return c.handleImport(commandArgs)
 	case "git":
 		return c.handleGit(commandArgs)
+	case "packs", "pack":
+		return c.handlePacks(commandArgs)
 	case "help":
 		return c.printHelp(commandArgs)
 	default:
@@ -288,8 +291,9 @@ func (c *CLI) createPrompt(args []string) error {
 	}
 
 	id := args[0]
-	var title, description, content, template string
+	var title, description, content, template, pack string
 	var tags []string
+	pack = "personal" // Default to personal library
 
 	// Parse flags
 	for i := 1; i < len(args); i++ {
@@ -323,6 +327,11 @@ func (c *CLI) createPrompt(args []string) error {
 				}
 				i++
 			}
+		case "--pack":
+			if i+1 < len(args) {
+				pack = args[i+1]
+				i++
+			}
 		case "--stdin":
 			// Read content from stdin
 			var buf strings.Builder
@@ -338,6 +347,12 @@ func (c *CLI) createPrompt(args []string) error {
 		}
 	}
 
+	// Validate pack name
+	if !c.service.IsValidPackName(pack) {
+		availablePacks := c.service.GetAvailablePackNames()
+		return fmt.Errorf("invalid pack '%s'. Available packs: %s", pack, strings.Join(availablePacks, ", "))
+	}
+
 	prompt := &models.Prompt{
 		ID:          id,
 		Version:     "1.0.0",
@@ -346,6 +361,7 @@ func (c *CLI) createPrompt(args []string) error {
 		Content:     content,
 		Tags:        tags,
 		TemplateRef: template,
+		Pack:        pack,
 	}
 
 	if err := c.service.CreatePrompt(prompt); err != nil {
@@ -399,6 +415,16 @@ func (c *CLI) editPrompt(args []string) error {
 					tags[j] = strings.TrimSpace(tags[j])
 				}
 				prompt.Tags = tags
+				i++
+			}
+		case "--pack":
+			if i+1 < len(args) {
+				packName := args[i+1]
+				if !c.service.IsValidPackName(packName) {
+					availablePacks := c.service.GetAvailablePackNames()
+					return fmt.Errorf("invalid pack '%s'. Available packs: %s", packName, strings.Join(availablePacks, ", "))
+				}
+				prompt.Pack = packName
 				i++
 			}
 		case "--add-tag":
@@ -744,7 +770,7 @@ func (c *CLI) handleGit(args []string) error {
 	switch subcommand {
 	case "setup":
 		if len(args) < 2 {
-			return fmt.Errorf("git setup requires a repository URL\n\nUsage: pocket-prompt git setup <repository-url>\n\nExamples:\n  pocket-prompt git setup https://github.com/username/my-prompts.git\n  pocket-prompt git setup git@github.com:username/my-prompts.git")
+			return fmt.Errorf("git setup requires a repository URL\n\nUsage: pkt git setup <repository-url>\n\nExamples:\n  pkt git setup https://github.com/username/my-prompts.git\n  pkt git setup git@github.com:username/my-prompts.git")
 		}
 		repoURL := args[1]
 		if err := c.service.SetupGitRepository(repoURL); err != nil {
@@ -785,9 +811,9 @@ func (c *CLI) handleGit(args []string) error {
 }
 
 func (c *CLI) printUsage() error {
-	fmt.Println(`pocket-prompt - Headless CLI mode
+	fmt.Println(`pkt - Headless CLI mode
 
-Usage: pocket-prompt <command> [options]
+Usage: pkt <command> [options]
 
 Commands:
   list, ls              List all prompts
@@ -808,7 +834,7 @@ Commands:
   git                   Git synchronization
   help                  Show help
 
-Use 'pocket-prompt help <command>' for detailed help on a specific command.`)
+Use 'pkt help <command>' for detailed help on a specific command.`)
 	return nil
 }
 
@@ -1356,7 +1382,7 @@ func (c *CLI) exportData(data interface{}, format, outputFile string) error {
 // handleImport handles import operations
 func (c *CLI) handleImport(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("import requires a subcommand or file path\n\nUsage:\n  pocket-prompt import claude-code [options]  # Import from Claude Code\n  pocket-prompt import git-repo <repo-url> [options]  # Import from Git repository\n  pocket-prompt import <file> [options]       # Import from JSON file")
+		return fmt.Errorf("import requires a subcommand or file path\n\nUsage:\n  pkt import claude-code [options]  # Import from Claude Code\n  pkt import git-repo <repo-url> [options]  # Import from Git repository\n  pkt import <file> [options]       # Import from JSON file")
 	}
 
 	subcommand := args[0]
@@ -1662,20 +1688,20 @@ Options:
 	case "search":
 		fmt.Println(`search - Search prompts
 
-Usage: pocket-prompt search <query> [options]
+Usage: pkt search <query> [options]
 
 Options:
   --format, -f <format>  Output format (table, json, ids, default)
   --boolean, -b          Use boolean expression search
 
 Examples:
-  pocket-prompt search "machine learning"
-  pocket-prompt search --boolean "(ai AND analysis) OR writing"`)
+  pkt search "machine learning"
+  pkt search --boolean "(ai AND analysis) OR writing"`)
 
 	case "create", "new":
 		fmt.Println(`create - Create a new prompt
 
-Usage: pocket-prompt create <id> [options]
+Usage: pkt create <id> [options]
 
 Options:
   --title <title>        Prompt title
@@ -1683,15 +1709,16 @@ Options:
   --content <content>    Prompt content
   --template <id>        Template to use
   --tags <tag1,tag2>     Comma-separated tags
+  --pack <pack>          Pack to save to (default: personal)
   --stdin                Read content from stdin
 
 Example:
-  pocket-prompt create my-prompt --title "My Prompt" --content "Hello world"`)
+  pkt create my-prompt --title "My Prompt" --content "Hello world" --pack "personal"`)
 
 	case "template":
 		fmt.Println(`template - Template management
 
-Usage: pocket-prompt template <subcommand> [options]
+Usage: pkt template <subcommand> [options]
 
 Subcommands:
   create <id>     Create a new template
@@ -1716,13 +1743,13 @@ Delete Options:
   --force, -f             Force deletion without confirmation
 
 Examples:
-  pocket-prompt template create my-template --name "My Template" --content "Hello {{name}}"
-  pocket-prompt template edit my-template --content "Updated content"`)
+  pkt template create my-template --name "My Template" --content "Hello {{name}}"
+  pkt template edit my-template --content "Updated content"`)
 
 	case "boolean-search":
 		fmt.Println(`boolean-search - Manage boolean searches
 
-Usage: pocket-prompt boolean-search <subcommand> [options]
+Usage: pkt boolean-search <subcommand> [options]
 
 Subcommands:
   create <name> <expression>  Create a new saved boolean search
@@ -1736,14 +1763,14 @@ Delete Options:
   --force, -f                 Force deletion without confirmation
 
 Examples:
-  pocket-prompt boolean-search create ai-search "(ai AND analysis) OR machine-learning"
-  pocket-prompt boolean-search run "(python AND tutorial) OR beginner"
-  pocket-prompt boolean-search run --saved ai-search`)
+  pkt boolean-search create ai-search "(ai AND analysis) OR machine-learning"
+  pkt boolean-search run "(python AND tutorial) OR beginner"
+  pkt boolean-search run --saved ai-search`)
 
 	case "export":
 		fmt.Println(`export - Export prompts and templates
 
-Usage: pocket-prompt export <type> [options]
+Usage: pkt export <type> [options]
 
 Types:
   prompts     Export all prompts
@@ -1755,16 +1782,16 @@ Options:
   --output, -o <file>     Output file (default: stdout)
 
 Examples:
-  pocket-prompt export all --output backup.json
-  pocket-prompt export prompts --format json`)
+  pkt export all --output backup.json
+  pkt export prompts --format json`)
 
 	case "import":
 		fmt.Println(`import - Import prompts and templates
 
 Usage: 
-  pocket-prompt import claude-code [options]   # Import from Claude Code
-  pocket-prompt import git-repo <repo-url> [options]  # Import from Git repository
-  pocket-prompt import <file> [options]        # Import from JSON file
+  pkt import claude-code [options]   # Import from Claude Code
+  pkt import git-repo <repo-url> [options]  # Import from Git repository
+  pkt import <file> [options]        # Import from JSON file
 
 Claude Code Import Options:
   --path <path>           Directory to import from (default: current dir + ~/.claude)
@@ -1794,36 +1821,36 @@ File Import Options:
 
 Examples:
   # Import from current project + ~/.claude/commands and ~/.claude/agents
-  pocket-prompt import claude-code
+  pkt import claude-code
 
   # Preview what would be imported
-  pocket-prompt import claude-code --preview
+  pkt import claude-code --preview
 
   # Import from specific directory only (without ~/.claude)
-  pocket-prompt import claude-code --path /path/to/project
+  pkt import claude-code --path /path/to/project
 
   # Import from specific directory + ~/.claude directories
-  pocket-prompt import claude-code --path /path/to/project --user
+  pkt import claude-code --path /path/to/project --user
 
   # Import from Git repository
-  pocket-prompt import git-repo https://github.com/user/prompts.git
+  pkt import git-repo https://github.com/user/prompts.git
 
   # Import from Git repository with custom owner tag
-  pocket-prompt import git-repo https://github.com/user/prompts.git --owner-tag "team-ai"
+  pkt import git-repo https://github.com/user/prompts.git --owner-tag "team-ai"
 
   # Preview Git repository import
-  pocket-prompt import git-repo https://github.com/user/prompts.git --preview
+  pkt import git-repo https://github.com/user/prompts.git --preview
 
   # Import from specific branch with additional tags
-  pocket-prompt import git-repo https://github.com/user/prompts.git --branch "development" --tags "experimental,dev"
+  pkt import git-repo https://github.com/user/prompts.git --branch "development" --tags "experimental,dev"
 
   # Import from JSON backup
-  pocket-prompt import backup.json --format json`)
+  pkt import backup.json --format json`)
 
 	case "git":
 		fmt.Println(`git - Git synchronization
 
-Usage: pocket-prompt git <subcommand>
+Usage: pkt git <subcommand>
 
 Subcommands:
   setup <url>     Setup Git repository (handles everything automatically)
@@ -1834,14 +1861,429 @@ Subcommands:
   disable         Disable git synchronization
 
 Examples:
-  pocket-prompt git setup https://github.com/username/my-prompts.git
-  pocket-prompt git setup git@github.com:username/my-prompts.git
-  pocket-prompt git status
-  pocket-prompt git sync`)
+  pkt git setup https://github.com/username/my-prompts.git
+  pkt git setup git@github.com:username/my-prompts.git
+  pkt git status
+  pkt git sync`)
+
+	case "packs", "pack":
+		fmt.Println(`packs - Pack management
+
+Packs are collections of prompts and templates that can be installed and shared.
+Perfect for distributing actionable prompts for specific use cases.
+
+Usage: pkt packs <subcommand>
+
+Subcommands:
+  list, ls              List all installed packs
+  install <url|path>    Install a pack from Git URL or directory
+  uninstall <name>      Uninstall a pack
+  info, show <name>     Show detailed pack information
+  create <dir> <name>   Create a new pack scaffold
+  refresh               Refresh pack metadata
+
+Flags:
+  --format json         Output in JSON format
+  --verbose, -v         Show detailed information
+  --tag <tag>           Filter by tag
+  --name <name>         Override pack name when installing
+  --branch <branch>     Install from specific Git branch
+  --force               Force reinstall if already exists
+
+Examples:
+  pkt packs list
+  pkt packs install https://github.com/user/decentral-compute-pack.git
+  pkt packs install ./my-pack-directory
+  pkt packs show decentral-compute-adoption
+  pkt packs create ./my-new-pack awesome-pack --title "Awesome Pack"
+  pkt packs uninstall old-pack
+
+Pack Structure:
+  my-pack/
+  ├── pack.json         # Pack metadata and configuration
+  ├── prompts/          # Prompt files (.md with YAML frontmatter)
+  ├── templates/        # Template files (.md with YAML frontmatter)
+  └── README.md         # Documentation`)
 
 	default:
 		fmt.Printf("No help available for command: %s\n", command)
 	}
 
+	return nil
+}
+
+// handlePacks handles pack management commands
+func (c *CLI) handlePacks(args []string) error {
+	if len(args) == 0 {
+		return c.packsUsage()
+	}
+
+	subcommand := args[0]
+	subArgs := args[1:]
+
+	switch subcommand {
+	case "list", "ls":
+		return c.listPacks(subArgs)
+	case "install":
+		return c.installPack(subArgs)
+	case "uninstall", "remove", "rm":
+		return c.uninstallPack(subArgs)
+	case "info", "show":
+		return c.showPack(subArgs)
+	case "create", "new":
+		return c.createPack(subArgs)
+	case "refresh":
+		return c.refreshPacks(subArgs)
+	default:
+		return fmt.Errorf("unknown packs subcommand: %s", subcommand)
+	}
+}
+
+// listPacks lists all installed packs
+func (c *CLI) listPacks(args []string) error {
+	var format string
+	var verbose bool
+	var tag string
+
+	// Parse flags
+	for i, arg := range args {
+		switch arg {
+		case "--format", "-f":
+			if i+1 < len(args) {
+				format = args[i+1]
+			}
+		case "--verbose", "-v":
+			verbose = true
+		case "--tag", "-t":
+			if i+1 < len(args) {
+				tag = args[i+1]
+			}
+		}
+	}
+
+	var packs []config.Pack
+	var err error
+
+	if tag != "" {
+		packs, err = c.service.GetPacksByTag(tag)
+	} else {
+		packs, err = c.service.ListPacks()
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to list packs: %w", err)
+	}
+
+	if format == "json" {
+		return c.formatPacksJSON(packs)
+	}
+
+	// Text format
+	fmt.Printf("Installed Packs (%d):\n\n", len(packs))
+	
+	if len(packs) == 0 {
+		fmt.Println("No packs installed. Install a pack with: pkt packs install <url>")
+		return nil
+	}
+
+	for _, pack := range packs {
+		fmt.Printf("📦 %s\n", pack.Title)
+		fmt.Printf("   Name: %s\n", pack.Name)
+		if pack.Author != "" {
+			fmt.Printf("   Author: %s\n", pack.Author)
+		}
+		fmt.Printf("   Version: %s\n", pack.Version)
+		if pack.Description != "" {
+			fmt.Printf("   Description: %s\n", pack.Description)
+		}
+		if len(pack.Tags) > 0 {
+			fmt.Printf("   Tags: %s\n", strings.Join(pack.Tags, ", "))
+		}
+		if verbose {
+			fmt.Printf("   Path: %s\n", pack.Path)
+			fmt.Printf("   Installed: %s\n", pack.InstallTime.Format("2006-01-02 15:04:05"))
+			if pack.InstallURL != "" {
+				fmt.Printf("   Source: %s\n", pack.InstallURL)
+			}
+			// Git status information
+			if pack.HasWriteAccess {
+				if pack.GitSyncEnabled {
+					fmt.Printf("   Git Status: ✓ Owner (auto-sync enabled)\n")
+				} else {
+					fmt.Printf("   Git Status: ✓ Owner (sync disabled)\n")
+				}
+				if pack.LastSync != nil {
+					fmt.Printf("   Last Sync: %s\n", pack.LastSync.Format("2006-01-02 15:04:05"))
+				}
+			} else {
+				fmt.Printf("   Git Status: ✗ Read-only (local changes only)\n")
+			}
+			if len(pack.Prompts) > 0 {
+				fmt.Printf("   Prompts: %d\n", len(pack.Prompts))
+			}
+			if len(pack.Templates) > 0 {
+				fmt.Printf("   Templates: %d\n", len(pack.Templates))
+			}
+		}
+		fmt.Println()
+	}
+
+	return nil
+}
+
+// installPack installs a pack from a URL or directory
+func (c *CLI) installPack(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("install requires a URL or directory path: packs install <url|path>")
+	}
+
+	source := args[0]
+	options := config.PackInstallOptions{}
+
+	// Parse flags
+	for i := 1; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--name":
+			if i+1 < len(args) {
+				options.Name = args[i+1]
+				i++
+			}
+		case "--branch":
+			if i+1 < len(args) {
+				options.Branch = args[i+1]
+				i++
+			}
+		case "--force":
+			options.Force = true
+		}
+	}
+
+	var err error
+	if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") || strings.HasSuffix(source, ".git") {
+		// Install from Git URL
+		err = c.service.InstallPackFromGit(source, options)
+	} else {
+		// Install from local directory
+		err = c.service.InstallPackFromDirectory(source, options)
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to install pack: %w", err)
+	}
+
+	fmt.Printf("Pack installed successfully from %s\n", source)
+	return nil
+}
+
+// uninstallPack removes a pack
+func (c *CLI) uninstallPack(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("uninstall requires pack name: packs uninstall <name>")
+	}
+
+	name := args[0]
+	
+	err := c.service.UninstallPack(name)
+	if err != nil {
+		return fmt.Errorf("failed to uninstall pack: %w", err)
+	}
+
+	fmt.Printf("Pack '%s' uninstalled successfully\n", name)
+	return nil
+}
+
+// showPack shows information about a specific pack
+func (c *CLI) showPack(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("show requires pack name: packs show <name>")
+	}
+
+	name := args[0]
+	var format string
+
+	// Parse flags
+	for i := 1; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--format", "-f":
+			if i+1 < len(args) {
+				format = args[i+1]
+				i++
+			}
+		}
+	}
+
+	pack, err := c.service.GetPack(name)
+	if err != nil {
+		return fmt.Errorf("failed to get pack: %w", err)
+	}
+
+	if format == "json" {
+		jsonData, err := json.MarshalIndent(pack, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to format JSON: %w", err)
+		}
+		fmt.Println(string(jsonData))
+		return nil
+	}
+
+	// Text format
+	fmt.Printf("📦 %s\n\n", pack.Title)
+	fmt.Printf("Name: %s\n", pack.Name)
+	fmt.Printf("Version: %s\n", pack.Version)
+	if pack.Author != "" {
+		fmt.Printf("Author: %s\n", pack.Author)
+	}
+	if pack.Description != "" {
+		fmt.Printf("Description: %s\n", pack.Description)
+	}
+	if pack.Homepage != "" {
+		fmt.Printf("Homepage: %s\n", pack.Homepage)
+	}
+	if len(pack.Tags) > 0 {
+		fmt.Printf("Tags: %s\n", strings.Join(pack.Tags, ", "))
+	}
+	fmt.Printf("Installed: %s\n", pack.InstallTime.Format("2006-01-02 15:04:05"))
+	if pack.InstallURL != "" {
+		fmt.Printf("Source: %s\n", pack.InstallURL)
+	}
+	fmt.Printf("Path: %s\n", pack.Path)
+	
+	// Git status information
+	if pack.HasWriteAccess {
+		if pack.GitSyncEnabled {
+			fmt.Printf("Git Status: ✓ Owner (auto-sync enabled)\n")
+		} else {
+			fmt.Printf("Git Status: ✓ Owner (sync disabled)\n")
+		}
+		if pack.LastSync != nil {
+			fmt.Printf("Last Sync: %s\n", pack.LastSync.Format("2006-01-02 15:04:05"))
+		} else {
+			fmt.Printf("Last Sync: Never\n")
+		}
+	} else {
+		fmt.Printf("Git Status: ✗ Read-only (local changes only)\n")
+	}
+	
+	if len(pack.Prompts) > 0 {
+		fmt.Printf("\nPrompts (%d):\n", len(pack.Prompts))
+		for _, promptID := range pack.Prompts {
+			fmt.Printf("  - %s\n", promptID)
+		}
+	}
+	
+	if len(pack.Templates) > 0 {
+		fmt.Printf("\nTemplates (%d):\n", len(pack.Templates))
+		for _, templateID := range pack.Templates {
+			fmt.Printf("  - %s\n", templateID)
+		}
+	}
+
+	return nil
+}
+
+// createPack creates a new pack scaffold
+func (c *CLI) createPack(args []string) error {
+	if len(args) < 2 {
+		return fmt.Errorf("create requires directory and name: packs create <directory> <name>")
+	}
+
+	directory := args[0]
+	name := args[1]
+	title := name
+	description := ""
+	author := ""
+
+	// Parse additional flags
+	for i := 2; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--title":
+			if i+1 < len(args) {
+				title = args[i+1]
+				i++
+			}
+		case "--description":
+			if i+1 < len(args) {
+				description = args[i+1]
+				i++
+			}
+		case "--author":
+			if i+1 < len(args) {
+				author = args[i+1]
+				i++
+			}
+		}
+	}
+
+	err := c.service.CreatePackScaffold(directory, name, title, description, author)
+	if err != nil {
+		return fmt.Errorf("failed to create pack: %w", err)
+	}
+
+	fmt.Printf("Pack scaffold created in %s\n", directory)
+	fmt.Printf("Name: %s\n", name)
+	fmt.Printf("Title: %s\n", title)
+	fmt.Println("\nNext steps:")
+	fmt.Printf("1. Add prompts to %s/prompts/\n", directory)
+	fmt.Printf("2. Add templates to %s/templates/\n", directory)
+	fmt.Printf("3. Edit %s/pack.json to update metadata\n", directory)
+	fmt.Printf("4. Create a Git repository and push to share your pack\n")
+
+	return nil
+}
+
+// refreshPacks rescans pack directories and updates metadata
+func (c *CLI) refreshPacks(args []string) error {
+	err := c.service.RefreshPackMetadata()
+	if err != nil {
+		return fmt.Errorf("failed to refresh pack metadata: %w", err)
+	}
+
+	fmt.Println("Pack metadata refreshed successfully")
+	return nil
+}
+
+// packsUsage prints usage for pack commands
+func (c *CLI) packsUsage() error {
+	fmt.Println(`packs - Pack management
+
+Usage: pkt packs <subcommand>
+
+Subcommands:
+  list, ls              List all installed packs
+  install <url|path>    Install a pack from Git URL or directory
+  uninstall <name>      Uninstall a pack
+  info, show <name>     Show detailed pack information
+  create <dir> <name>   Create a new pack scaffold
+  refresh               Refresh pack metadata
+
+Flags:
+  --format json         Output in JSON format
+  --verbose, -v         Show detailed information
+  --tag <tag>           Filter by tag
+  --name <name>         Override pack name when installing
+  --branch <branch>     Install from specific Git branch
+  --force               Force reinstall if already exists
+
+Examples:
+  pkt packs list
+  pkt packs install https://github.com/user/decentral-compute-pack.git
+  pkt packs install ./my-pack-directory
+  pkt packs show decentral-compute-adoption
+  pkt packs create ./my-new-pack awesome-pack --title "Awesome Pack"
+  pkt packs uninstall old-pack`)
+
+	return nil
+}
+
+// formatPacksJSON formats packs as JSON
+func (c *CLI) formatPacksJSON(packs []config.Pack) error {
+	jsonData, err := json.MarshalIndent(packs, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to format JSON: %w", err)
+	}
+	fmt.Println(string(jsonData))
 	return nil
 }

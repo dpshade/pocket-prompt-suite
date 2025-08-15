@@ -50,19 +50,19 @@ go test ./internal/service  # Test specific package
 go test -run TestBooleanSearch ./...  # Test specific function
 
 # Build binary
-go build -o pocket-prompt main.go
+go build -o pkt main.go
 
 # Start different modes
-./pocket-prompt --tui  # Interactive mode
-./pocket-prompt --url-server --port 8080  # HTTP server
-./pocket-prompt search "query"  # CLI search
-./pocket-prompt boolean-search "ai AND agent"  # CLI boolean search
+./pkt --tui  # Interactive mode
+./pkt --url-server --port 8080  # HTTP server
+./pkt search "query"  # CLI search
+./pkt boolean-search "ai AND agent"  # CLI boolean search
 
 # Import prompts and templates
-./pocket-prompt import claude-code  # Import from Claude Code installations
-./pocket-prompt import git-repo https://github.com/user/prompts.git  # Import from Git repository
-./pocket-prompt import git-repo https://github.com/user/prompts.git --preview  # Preview git import
-./pocket-prompt import backup.json  # Import from JSON file
+./pkt import claude-code  # Import from Claude Code installations
+./pkt import git-repo https://github.com/user/prompts.git  # Import from Git repository
+./pkt import git-repo https://github.com/user/prompts.git --preview  # Preview git import
+./pkt import backup.json  # Import from JSON file
 ```
 
 ### Extension Development Commands
@@ -107,7 +107,7 @@ Critical HTTP endpoints that Raycast extension depends on:
 ### Unified Search System
 Core pattern: single search interface with intelligent routing:
 - **`searchDetection.ts`**: Analyzes queries using regex patterns and confidence scoring
-- **`useUnifiedSearch()` hook**: Routes to appropriate API endpoint based on detection
+- **`useUnifiedSearch()` hook**: Routes to apktropriate API endpoint based on detection
 - **Search modes**: Fuzzy (`/search`), Boolean (`/boolean`), Saved (`/saved-search/{name}`)
 
 ### API Client Design

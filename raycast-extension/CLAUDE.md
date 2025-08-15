@@ -17,13 +17,13 @@ The extension centers around a single search interface that intelligently detect
 ### API Integration Pattern
 - **Configurable Server**: Server URL is user-configurable via Raycast preferences, defaulting to `http://localhost:8080`
 - **Dynamic URL Resolution**: `getServerUrl()` in `src/utils/api.ts` reads preferences on each request
-- **Two-Stage Content Loading**: List API returns prompts without content; detail view fetches full content via `/pocket-prompt/get/{id}`
+- **Two-Stage Content Loading**: List API returns prompts without content; detail view fetches full content via `/prompts/{id}`
 
 ### Search Mode Architecture
 Three distinct search modes unified under one interface:
-1. **Fuzzy Search**: Natural language queries → `/pocket-prompt/search`
-2. **Boolean Search**: Detected expressions with AND/OR/NOT → `/pocket-prompt/boolean`  
-3. **Saved Search**: Dropdown selection → `/pocket-prompt/saved-search/{name}`
+1. **Fuzzy Search**: Natural language queries → `/search`
+2. **Boolean Search**: Detected expressions with AND/OR/NOT → `/boolean`  
+3. **Saved Search**: Dropdown selection → `/saved-search/{name}`
 
 The `searchAnalysis` object in the main component determines routing and UI behavior.
 
@@ -54,7 +54,7 @@ Boolean search detection uses regex patterns with confidence scoring:
 ### Detail View Content Strategy
 - **Sidebar Metadata**: All structured information (name, summary, tags, variables, timestamps) displayed in `Detail.Metadata`
 - **Main Content**: Raw prompt content only, without markdown formatting
-- **Content Loading**: Automatically fetches full content using `/get/{id}` endpoint when detail view opens
+- **Content Loading**: Automatically fetches full content using `/prompts/{id}` endpoint when detail view opens
 - **Summary Wrapping**: Long summaries are intelligently broken into multiple metadata labels for better display
 
 ### Variable Form Handling
@@ -73,12 +73,16 @@ Unified dropdown provides access to:
 
 Requires a running Pocket Prompt server with these endpoints:
 - `/health` - Server status
-- `/pocket-prompt/list?format=json` - List prompts (without content)
-- `/pocket-prompt/get/{id}?format=json` - Get full prompt content
-- `/pocket-prompt/search?q={query}&format=json` - Fuzzy search
-- `/pocket-prompt/boolean?expr={expression}&format=json` - Boolean search
-- `/pocket-prompt/saved-searches/list` - List saved searches
-- `/pocket-prompt/saved-search/{name}?format=json` - Execute saved search
+- `/prompts` - List prompts (without content, JSON by default)
+- `/prompts/{id}` - Get full prompt content (JSON by default)
+- `/templates` - List templates (JSON by default)
+- `/templates/{id}` - Get template details (JSON by default)
+- `/tags` - List all tags (text format)
+- `/tags/{tag}` - Get prompts by tag (JSON by default)
+- `/search?q={query}` - Fuzzy search (JSON by default)
+- `/boolean?expr={expression}` - Boolean search (JSON by default)
+- `/saved-searches/list` - List saved searches (text format)
+- `/saved-search/{name}` - Execute saved search (JSON by default)
 
 ## TypeScript Architecture
 

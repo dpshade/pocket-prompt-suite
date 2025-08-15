@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "cd raycast-extension && bun run dev",
     "build": "bun run build:core && bun run build:extension", 
-    "build:core": "cd core && go build -o pocket-prompt main.go",
+    "build:core": "cd core && go build -o pkt main.go",
     "build:extension": "cd raycast-extension && bun run build",
     "test": "bun run test:core && bun run test:extension",
     "test:core": "cd core && go test ./...",

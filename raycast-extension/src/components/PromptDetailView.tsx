@@ -10,53 +10,12 @@ import {
   Color,
   confirmAlert,
   Alert,
-  Form,
   useNavigation,
 } from "@raycast/api";
 import { useState, useEffect } from "react";
-import { PocketPrompt, RenderParams } from "../types";
+import { PocketPrompt } from "../types";
 import { pocketPromptAPI } from "../utils/api";
-
-function VariableForm({
-  prompt,
-  onSubmit,
-}: {
-  prompt: PocketPrompt;
-  onSubmit: (variables: RenderParams) => void;
-}) {
-  const { pop } = useNavigation();
-  const [variables, setVariables] = useState<RenderParams>({});
-
-  const handleSubmit = () => {
-    onSubmit(variables);
-    pop();
-  };
-
-  return (
-    <Form
-      actions={
-        <ActionPanel>
-          <Action.SubmitForm title="Render Prompt" onSubmit={handleSubmit} />
-        </ActionPanel>
-      }
-    >
-      <Form.Description text={`Fill in variables for: ${prompt.Name}`} />
-      {prompt.Variables?.map((variable) => (
-        <Form.TextField
-          key={variable.name}
-          id={variable.name}
-          title={variable.name}
-          placeholder={variable.default?.toString() || ""}
-          info={variable.description}
-          value={variables[variable.name]?.toString() || ""}
-          onChange={(value) =>
-            setVariables((prev) => ({ ...prev, [variable.name]: value }))
-          }
-        />
-      ))}
-    </Form>
-  );
-}
+import EditPromptForm from "./EditPromptForm";
 
 interface PromptDetailViewProps {
   prompt: PocketPrompt;
@@ -67,37 +26,32 @@ export default function PromptDetailView({
   prompt,
   onRefresh,
 }: PromptDetailViewProps) {
+  const { push } = useNavigation();
   const [fullPrompt, setFullPrompt] = useState<PocketPrompt>(prompt);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     const fetchFullPrompt = async () => {
-      // Only fetch if the current prompt doesn't have content
-      if (!prompt.Content || prompt.Content.trim() === "") {
-        setIsLoading(true);
-        try {
-          const fullPromptData = await pocketPromptAPI.getPrompt(prompt.ID);
-          setFullPrompt(fullPromptData);
-        } catch (error) {
-          console.error("Failed to fetch full prompt:", error);
-          // Keep using the original prompt if fetch fails
-          setFullPrompt(prompt);
-        } finally {
-          setIsLoading(false);
-        }
+      // ALWAYS fetch full content for detail view
+      // This ensures edit action is never blocked by API calls
+      setIsLoading(true);
+      try {
+        const fullPromptData = await pocketPromptAPI.getPrompt(prompt.ID);
+        setFullPrompt(fullPromptData);
+      } catch (error) {
+        console.error("Failed to fetch full prompt:", error);
+        // Keep using the original prompt if fetch fails
+        setFullPrompt(prompt);
+      } finally {
+        setIsLoading(false);
       }
     };
 
     fetchFullPrompt();
-  }, [prompt.ID, prompt.Content]);
+  }, [prompt.ID]);
   const copyPromptToClipboard = async () => {
     try {
-      if (fullPrompt.Variables && fullPrompt.Variables.length > 0) {
-        return;
-      }
-
-      const rendered = await pocketPromptAPI.renderPrompt(fullPrompt.ID);
-      await Clipboard.copy(rendered);
+      await Clipboard.copy(fullPrompt.Content);
       showToast({
         style: Toast.Style.Success,
         title: "Copied to Clipboard",
@@ -107,27 +61,6 @@ export default function PromptDetailView({
       showToast({
         style: Toast.Style.Failure,
         title: "Failed to Copy",
-        message: error instanceof Error ? error.message : "Unknown error",
-      });
-    }
-  };
-
-  const renderWithVariables = async (variables: RenderParams) => {
-    try {
-      const rendered = await pocketPromptAPI.renderPrompt(
-        fullPrompt.ID,
-        variables,
-      );
-      await Clipboard.copy(rendered);
-      showToast({
-        style: Toast.Style.Success,
-        title: "Rendered and Copied",
-        message: fullPrompt.Name,
-      });
-    } catch (error) {
-      showToast({
-        style: Toast.Style.Failure,
-        title: "Failed to Render",
         message: error instanceof Error ? error.message : "Unknown error",
       });
     }
@@ -169,6 +102,30 @@ export default function PromptDetailView({
     }
   };
 
+  const handleEditPrompt = () => {
+    // Edge case: if user clicks edit before content loads, wait briefly
+    if (isLoading) {
+      showToast({
+        style: Toast.Style.Animated,
+        title: "Loading...",
+        message: "Preparing prompt for editing",
+      });
+      return;
+    }
+
+    // Content is guaranteed to be loaded by useEffect
+    // Edit form opens instantly with no API delays
+    push(
+      <EditPromptForm
+        prompt={fullPrompt}
+        onSave={(updatedPrompt) => {
+          setFullPrompt(updatedPrompt);
+          onRefresh?.();
+        }}
+      />,
+    );
+  };
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
       year: "numeric",
@@ -180,9 +137,6 @@ export default function PromptDetailView({
   };
 
   const getPromptIcon = () => {
-    if (fullPrompt.Variables && fullPrompt.Variables.length > 0) {
-      return Icon.Gear;
-    }
     if (fullPrompt.TemplateRef) {
       return Icon.Document;
     }
@@ -293,25 +247,6 @@ export default function PromptDetailView({
             icon={Icon.Clock}
           />
 
-          {fullPrompt.Variables && fullPrompt.Variables.length > 0 && (
-            <>
-              <Detail.Metadata.Separator />
-              <Detail.Metadata.Label
-                title="Variables"
-                text={`${fullPrompt.Variables.length} variables defined`}
-                icon={Icon.Gear}
-              />
-              {fullPrompt.Variables.map((variable) => (
-                <Detail.Metadata.Label
-                  key={variable.name}
-                  title={variable.name}
-                  text={`${variable.type}${variable.required ? " (required)" : ""}`}
-                  icon={Icon.Text}
-                />
-              ))}
-            </>
-          )}
-
           {fullPrompt.FilePath && (
             <>
               <Detail.Metadata.Separator />
@@ -335,24 +270,17 @@ export default function PromptDetailView({
       actions={
         <ActionPanel>
           <ActionPanel.Section title="Primary Actions">
-            {fullPrompt.Variables && fullPrompt.Variables.length > 0 ? (
-              <Action.Push
-                title="Fill Variables & Copy"
-                icon={Icon.Gear}
-                target={
-                  <VariableForm
-                    prompt={fullPrompt}
-                    onSubmit={(variables) => renderWithVariables(variables)}
-                  />
-                }
-              />
-            ) : (
-              <Action
-                title="Copy to Clipboard"
-                icon={Icon.Clipboard}
-                onAction={copyPromptToClipboard}
-              />
-            )}
+            <Action
+              title="Edit Prompt"
+              icon={Icon.Pencil}
+              onAction={handleEditPrompt}
+              shortcut={{ modifiers: ["cmd"], key: "e" }}
+            />
+            <Action
+              title="Copy to Clipboard"
+              icon={Icon.Clipboard}
+              onAction={copyPromptToClipboard}
+            />
             <Action
               title="Copy Raw Content"
               icon={Icon.Document}

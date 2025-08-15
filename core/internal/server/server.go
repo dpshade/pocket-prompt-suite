@@ -115,6 +115,8 @@ func (s *URLServer) handlePocketPrompt(w http.ResponseWriter, r *http.Request) {
 		s.handleSavedSearches(w, r, parts[1:])
 	case "tags":
 		s.handleTags(w, r, parts[1:])
+	case "packs":
+		s.handlePacks(w, r)
 	// Legacy endpoints for backward compatibility
 	case "get":
 		s.handleGet(w, r, parts[1:])
@@ -325,7 +327,7 @@ func (s *URLServer) handleSavedSearch(w http.ResponseWriter, r *http.Request, pa
 	s.writeContentResponse(w, content, message)
 }
 
-// handleSavedSearches lists saved searches
+// handleSavedSearches handles saved searches operations
 func (s *URLServer) handleSavedSearches(w http.ResponseWriter, r *http.Request, parts []string) {
 	operation := "list"
 	if len(parts) > 0 {
@@ -334,18 +336,75 @@ func (s *URLServer) handleSavedSearches(w http.ResponseWriter, r *http.Request, 
 
 	switch operation {
 	case "list":
-		searches, err := s.service.ListSavedSearches()
-		if err != nil {
-			s.writeError(w, fmt.Sprintf("Failed to list saved searches: %v", err), http.StatusInternalServerError)
+		switch r.Method {
+		case "GET":
+			searches, err := s.service.ListSavedSearches()
+			if err != nil {
+				s.writeError(w, fmt.Sprintf("Failed to list saved searches: %v", err), http.StatusInternalServerError)
+				return
+			}
+
+			// Check if JSON format is requested
+			if r.URL.Query().Get("format") == "json" {
+				w.Header().Set("Content-Type", "application/json")
+				if err := json.NewEncoder(w).Encode(searches); err != nil {
+					s.writeError(w, fmt.Sprintf("Failed to encode JSON: %v", err), http.StatusInternalServerError)
+				}
+				return
+			}
+
+			// Default text format
+			var content strings.Builder
+			for _, search := range searches {
+				content.WriteString(fmt.Sprintf("%s: %s\n", search.Name, search.Expression.String()))
+			}
+
+			s.writeContentResponse(w, content.String(), fmt.Sprintf("Listed %d saved searches", len(searches)))
+		case "POST":
+			// Create new saved search
+			var savedSearch models.SavedSearch
+			if err := json.NewDecoder(r.Body).Decode(&savedSearch); err != nil {
+				s.writeError(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
+				return
+			}
+
+			if err := s.service.SaveBooleanSearch(savedSearch); err != nil {
+				s.writeError(w, fmt.Sprintf("Failed to save search: %v", err), http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			response := map[string]interface{}{
+				"success": true,
+				"message": fmt.Sprintf("Saved search '%s' created successfully", savedSearch.Name),
+			}
+			json.NewEncoder(w).Encode(response)
+		default:
+			s.writeError(w, fmt.Sprintf("Method %s not allowed for saved searches", r.Method), http.StatusMethodNotAllowed)
+		}
+	case "delete":
+		if r.Method != "DELETE" && r.Method != "POST" {
+			s.writeError(w, fmt.Sprintf("Method %s not allowed for delete operation", r.Method), http.StatusMethodNotAllowed)
 			return
 		}
 
-		var content strings.Builder
-		for _, search := range searches {
-			content.WriteString(fmt.Sprintf("%s: %s\n", search.Name, search.Expression.String()))
+		if len(parts) < 2 {
+			s.writeError(w, "Search name required for delete operation", http.StatusBadRequest)
+			return
 		}
 
-		s.writeContentResponse(w, content.String(), fmt.Sprintf("Listed %d saved searches", len(searches)))
+		searchName := parts[1]
+		if err := s.service.DeleteSavedSearch(searchName); err != nil {
+			s.writeError(w, fmt.Sprintf("Failed to delete search: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		response := map[string]interface{}{
+			"success": true,
+			"message": fmt.Sprintf("Saved search '%s' deleted successfully", searchName),
+		}
+		json.NewEncoder(w).Encode(response)
 	default:
 		s.writeError(w, fmt.Sprintf("Unknown saved searches operation: %s", operation), http.StatusNotFound)
 	}
@@ -399,6 +458,39 @@ func (s *URLServer) handleGetTag(w http.ResponseWriter, r *http.Request, tagName
 	s.writeContentResponse(w, content, fmt.Sprintf("Tag '%s' has %d prompts", tagName, len(prompts)))
 }
 
+// handlePacks handles pack operations
+func (s *URLServer) handlePacks(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "GET":
+		s.handleListPacks(w, r)
+	default:
+		s.writeError(w, fmt.Sprintf("Method %s not allowed for packs collection", r.Method), http.StatusMethodNotAllowed)
+	}
+}
+
+// handleListPacks lists all available packs for selection
+func (s *URLServer) handleListPacks(w http.ResponseWriter, r *http.Request) {
+	format := r.URL.Query().Get("format")
+	
+	if format == "json" {
+		// Return pack selection options as JSON (title only for cmd+p view)
+		options, err := s.service.GetAvailablePacks()
+		if err != nil {
+			s.writeError(w, fmt.Sprintf("Failed to get available packs: %v", err), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"packs":   options,
+			"success": true,
+		})
+	} else {
+		// Return simple list of pack names
+		packNames := s.service.GetAvailablePackNames()
+		content := strings.Join(packNames, "\n")
+		s.writeContentResponse(w, content, fmt.Sprintf("Listed %d packs", len(packNames)))
+	}
+}
 
 // handleTemplates handles REST operations for templates collection and individual resources
 func (s *URLServer) handleTemplates(w http.ResponseWriter, r *http.Request, parts []string) {
@@ -538,6 +630,7 @@ func (s *URLServer) handlePrompts(w http.ResponseWriter, r *http.Request, parts 
 func (s *URLServer) handleListPrompts(w http.ResponseWriter, r *http.Request) {
 	format := r.URL.Query().Get("format")
 	tag := r.URL.Query().Get("tag")
+	pack := r.URL.Query().Get("pack")
 	limitStr := r.URL.Query().Get("limit")
 	
 	var prompts []*models.Prompt
@@ -545,6 +638,8 @@ func (s *URLServer) handleListPrompts(w http.ResponseWriter, r *http.Request) {
 
 	if tag != "" {
 		prompts, err = s.service.FilterPromptsByTag(tag)
+	} else if pack != "" {
+		prompts, err = s.service.ListPromptsByPack(pack)
 	} else {
 		prompts, err = s.service.ListPrompts()
 	}
@@ -611,6 +706,18 @@ func (s *URLServer) handleCreatePrompt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Set default pack if not provided
+	if prompt.Pack == "" {
+		prompt.Pack = "personal"
+	}
+
+	// Validate pack name
+	if !s.service.IsValidPackName(prompt.Pack) {
+		availablePacks := s.service.GetAvailablePackNames()
+		s.writeError(w, fmt.Sprintf("Invalid pack '%s'. Available packs: %s", prompt.Pack, strings.Join(availablePacks, ", ")), http.StatusBadRequest)
+		return
+	}
+
 	// Create the prompt
 	if err := s.service.CreatePrompt(&prompt); err != nil {
 		if strings.Contains(err.Error(), "already exists") {
@@ -653,6 +760,18 @@ func (s *URLServer) handleUpdatePrompt(w http.ResponseWriter, r *http.Request, p
 	}
 	if prompt.Content == "" {
 		s.writeError(w, "Prompt Content is required", http.StatusBadRequest)
+		return
+	}
+
+	// Set default pack if not provided
+	if prompt.Pack == "" {
+		prompt.Pack = "personal"
+	}
+
+	// Validate pack name
+	if !s.service.IsValidPackName(prompt.Pack) {
+		availablePacks := s.service.GetAvailablePackNames()
+		s.writeError(w, fmt.Sprintf("Invalid pack '%s'. Available packs: %s", prompt.Pack, strings.Join(availablePacks, ", ")), http.StatusBadRequest)
 		return
 	}
 
@@ -1025,6 +1144,8 @@ GET /prompts/{id}?format=json
 POST /prompts
 - Creates a new prompt from JSON data
 - Required fields: ID, Name, Content
+- Optional fields: Pack (defaults to "personal"), Tags, TemplateRef, Version, Summary
+- Pack field specifies which pack to save the prompt to
 - Automatically commits to git if sync enabled
 - Returns: 201 Created with success message
 
@@ -1032,6 +1153,7 @@ POST /prompts
 PUT /prompts/{id}
 - Updates an existing prompt with JSON data
 - Required fields: Name, Content
+- Optional fields: Pack (defaults to "personal"), Tags, TemplateRef, Version, Summary
 - ID in JSON must match URL parameter
 - Automatically commits to git if sync enabled
 - Returns: 200 OK with success message
@@ -1068,8 +1190,22 @@ GET /saved-search/{name}
   - q: optional text query filter (overrides saved text query)
   - format: json (default), text, ids, table
 
-GET /saved-searches/list
+#### List Saved Searches
+GET /saved-searches/list?format=json
 - List all saved boolean searches
+- Format: json (returns array of SavedSearch objects), text (default, returns "name: expression" lines)
+
+#### Create Saved Search
+POST /saved-searches/list
+- Creates a new saved search from JSON data
+- Required fields: Name, Expression (BooleanExpression object)
+- Returns: 201 Created with success message
+
+#### Delete Saved Search
+DELETE /saved-searches/delete/{name}
+POST /saved-searches/delete/{name}
+- Deletes a saved search by name
+- Returns: 200 OK with success message
 
 ### Tag Operations
 
@@ -1081,6 +1217,17 @@ GET /tags
 GET /tags/{tag-name}?format=ids
 - Get all prompts with specific tag
 - Format options available
+
+### Pack Operations
+
+#### List Available Packs
+GET /packs
+- Returns all available packs for prompt creation
+- Default format: text (one pack name per line)
+
+GET /packs?format=json
+- Returns pack selection options with display names
+- Format: {"packs": {"Display Name": "pack-name", ...}}
 
 ### Template Operations
 

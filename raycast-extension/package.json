@@ -16,6 +16,18 @@
       "title": "Prompt Library",
       "description": "Unified search with fuzzy text, boolean expressions, and saved searches",
       "mode": "view"
+    },
+    {
+      "name": "add-prompt",
+      "title": "Add New Prompt",
+      "description": "Create a new prompt from scratch and add it to your library",
+      "mode": "view"
+    },
+    {
+      "name": "saved-searches",
+      "title": "Saved Searches",
+      "description": "Manage and execute your saved boolean searches",
+      "mode": "view"
     }
   ],
   "preferences": [

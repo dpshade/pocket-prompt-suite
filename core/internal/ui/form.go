@@ -51,6 +51,7 @@ type CreateForm struct {
 	submitted     bool
 	fromScratch   bool // True for simplified "from scratch" form
 	availableTags []string // Added for tag autocomplete
+	availablePacks []string // Added for pack autocomplete
 }
 
 // Form field indices
@@ -61,12 +62,13 @@ const (
 	descriptionField
 	tagsField
 	templateRefField
+	packField
 	contentField
 )
 
 // NewCreateFormFromScratch creates a simplified empty form for starting from scratch
 func NewCreateFormFromScratch() *CreateForm {
-	inputs := make([]textinput.Model, 6)
+	inputs := make([]textinput.Model, 7)
 
 	// ID field - will be auto-generated from title
 	inputs[idField] = textinput.New()
@@ -100,6 +102,12 @@ func NewCreateFormFromScratch() *CreateForm {
 	inputs[templateRefField].CharLimit = 100
 	inputs[templateRefField].Width = 40
 
+	// Pack field - default to "personal"
+	inputs[packField] = textinput.New()
+	inputs[packField].SetValue("personal")
+	inputs[packField].CharLimit = 50
+	inputs[packField].Width = 40
+
 	// Content textarea - completely empty
 	ta := textarea.New()
 	ta.CharLimit = 0 // Remove character limit (0 = unlimited)
@@ -118,7 +126,7 @@ func NewCreateFormFromScratch() *CreateForm {
 
 // NewCreateForm creates a new prompt creation form with helpful placeholders
 func NewCreateForm() *CreateForm {
-	inputs := make([]textinput.Model, 6)
+	inputs := make([]textinput.Model, 7)
 
 	// ID field
 	inputs[idField] = textinput.New()
@@ -156,6 +164,13 @@ func NewCreateForm() *CreateForm {
 	inputs[templateRefField].Placeholder = "template-id (optional)"
 	inputs[templateRefField].CharLimit = 100
 	inputs[templateRefField].Width = 40
+
+	// Pack field
+	inputs[packField] = textinput.New()
+	inputs[packField].Placeholder = "personal (default)"
+	inputs[packField].SetValue("personal")
+	inputs[packField].CharLimit = 50
+	inputs[packField].Width = 40
 
 	// Content textarea
 	ta := textarea.New()
@@ -255,6 +270,11 @@ func (f *CreateForm) Update(msg tea.Msg) tea.Cmd {
 			f.updateTagAutocomplete()
 		}
 		
+		// Update pack autocomplete if we're in the pack field
+		if f.focused == packField {
+			f.updatePackAutocomplete()
+		}
+		
 		return cmd
 	}
 
@@ -285,13 +305,15 @@ func (f *CreateForm) nextField() {
 	}
 	
 	if f.fromScratch {
-		// Navigation for scratch form: Version -> Title -> Description -> Tags -> Template Ref -> Content
+		// Navigation for scratch form: Version -> Title -> Description -> Pack -> Tags -> Template Ref -> Content
 		switch f.focused {
 		case versionField:
 			f.focused = titleField
 		case titleField:
 			f.focused = descriptionField
 		case descriptionField:
+			f.focused = packField
+		case packField:
 			f.focused = tagsField
 		case tagsField:
 			f.focused = templateRefField
@@ -326,7 +348,7 @@ func (f *CreateForm) prevField() {
 	}
 	
 	if f.fromScratch {
-		// Navigation for scratch form: Content -> Template Ref -> Tags -> Description -> Title -> Version
+		// Navigation for scratch form: Content -> Template Ref -> Tags -> Pack -> Description -> Title -> Version
 		switch f.focused {
 		case versionField:
 			f.focused = contentField
@@ -334,8 +356,10 @@ func (f *CreateForm) prevField() {
 			f.focused = versionField
 		case descriptionField:
 			f.focused = titleField
-		case tagsField:
+		case packField:
 			f.focused = descriptionField
+		case tagsField:
+			f.focused = packField
 		case templateRefField:
 			f.focused = tagsField
 		case contentField:
@@ -385,6 +409,8 @@ func (f *CreateForm) GetFocusedFieldType() string {
 		return "tags"
 	case templateRefField:
 		return "templateRef"
+	case packField:
+		return "pack"
 	case contentField:
 		return "content"
 	default:
@@ -420,6 +446,7 @@ func (f *CreateForm) ToPrompt() *models.Prompt {
 			Summary:     f.inputs[descriptionField].Value(),
 			Tags:        tags,
 			TemplateRef: f.inputs[templateRefField].Value(),
+			Pack:        f.inputs[packField].Value(),
 			CreatedAt:   now,
 			UpdatedAt:   now,
 			Content:     f.textarea.Value(),
@@ -449,6 +476,7 @@ func (f *CreateForm) ToPrompt() *models.Prompt {
 		Summary:     f.inputs[descriptionField].Value(),
 		Tags:        tags,
 		TemplateRef: f.inputs[templateRefField].Value(),
+		Pack:        f.inputs[packField].Value(),
 		CreatedAt:   now,
 		UpdatedAt:   now,
 		Content:     f.textarea.Value(),
@@ -483,6 +511,21 @@ func (f *CreateForm) SetAvailableTags(tags []string) {
 		// Use multiple keybinds for better accessibility: Ctrl+Space, Right arrow, or Ctrl+Right
 		customKeyMap.AcceptSuggestion = key.NewBinding(key.WithKeys("ctrl+space", "right", "ctrl+right"))
 		f.inputs[tagsField].KeyMap = customKeyMap
+	}
+}
+
+// SetAvailablePacks sets the available packs for autocomplete
+func (f *CreateForm) SetAvailablePacks(packs []string) {
+	f.availablePacks = packs
+	if len(packs) > 0 {
+		f.inputs[packField].SetSuggestions(packs)
+		f.inputs[packField].ShowSuggestions = true
+		
+		// Customize keybindings for pack autocomplete
+		customKeyMap := textinput.DefaultKeyMap
+		// Use multiple keybinds for better accessibility: Ctrl+Space, Right arrow, or Ctrl+Right
+		customKeyMap.AcceptSuggestion = key.NewBinding(key.WithKeys("ctrl+space", "right", "ctrl+right"))
+		f.inputs[packField].KeyMap = customKeyMap
 	}
 }
 
@@ -546,6 +589,30 @@ func (f *CreateForm) getCurrentTagForCompletion(text string, cursorPos int) stri
 	return ""
 }
 
+// updatePackAutocomplete updates pack autocomplete suggestions based on current input
+func (f *CreateForm) updatePackAutocomplete() {
+	if len(f.availablePacks) == 0 {
+		return
+	}
+	
+	value := f.inputs[packField].Value()
+	
+	if value == "" {
+		// Show all packs if no current input
+		f.inputs[packField].SetSuggestions(f.availablePacks)
+	} else {
+		// Filter packs that start with the current input (case insensitive)
+		var filteredPacks []string
+		valueLower := strings.ToLower(value)
+		for _, pack := range f.availablePacks {
+			if strings.HasPrefix(strings.ToLower(pack), valueLower) {
+				filteredPacks = append(filteredPacks, pack)
+			}
+		}
+		f.inputs[packField].SetSuggestions(filteredPacks)
+	}
+}
+
 // LoadPrompt loads an existing prompt into the form for editing
 func (f *CreateForm) LoadPrompt(prompt *models.Prompt) {
 	f.inputs[idField].SetValue(prompt.ID)
@@ -563,8 +630,15 @@ func (f *CreateForm) LoadPrompt(prompt *models.Prompt) {
 	}
 	f.inputs[tagsField].SetValue(tags)
 	
-	
 	f.inputs[templateRefField].SetValue(prompt.TemplateRef)
+	
+	// Set pack field, default to "personal" if empty
+	packValue := prompt.Pack
+	if packValue == "" {
+		packValue = "personal"
+	}
+	f.inputs[packField].SetValue(packValue)
+	
 	f.textarea.SetValue(prompt.Content)
 }
 

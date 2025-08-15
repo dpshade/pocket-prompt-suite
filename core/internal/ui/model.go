@@ -196,6 +196,10 @@ type Model struct {
 	currentExpression  *models.BooleanExpression
 	savedSearches      []models.SavedSearch
 	saveSearchModal    *SaveSearchModal
+	
+	// Pack selection state
+	packSelectorModal  *PackSelectorModal
+	selectedPacks      []string
 }
 
 // KeyMap defines all key bindings
@@ -220,6 +224,7 @@ type KeyMap struct {
 	GHSyncInfo key.Binding
 	BooleanSearch key.Binding
 	SavedSearches key.Binding
+	PackSelector  key.Binding
 }
 
 // ShortHelp returns keybindings to show in the mini help view
@@ -234,6 +239,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.Enter, k.Back, k.Search, k.New},
 		{k.Edit, k.Delete, k.Templates, k.Copy},
 		{k.CopyJSON, k.Export, k.BooleanSearch, k.SavedSearches},
+		{k.PackSelector},
 		{k.Help, k.Quit},
 	}
 }
@@ -319,6 +325,10 @@ var keys = KeyMap{
 		key.WithKeys("f"),
 		key.WithHelp("f", "saved searches"),
 	),
+	PackSelector: key.NewBinding(
+		key.WithKeys("p"),
+		key.WithHelp("p", "select packs"),
+	),
 }
 
 // NewModel creates a new TUI model
@@ -380,6 +390,7 @@ func NewModel(svc *service.Service) (*Model, error) {
 		templates:       templates,
 		loading:         true, // Start in loading state
 		glamourRenderer: renderer,
+		selectedPacks:   []string{"personal"}, // Default to personal pack
 	}, nil
 }
 
@@ -483,6 +494,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.saveSearchModal != nil {
 			m.saveSearchModal.Resize(msg.Width, msg.Height)
 		}
+		if m.packSelectorModal != nil {
+			m.packSelectorModal.SetSize(msg.Width, msg.Height)
+		}
 		
 		// Update help modal viewport size
 		helpWidth := min(60, msg.Width-4)
@@ -496,7 +510,44 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.KeyMsg:
-		// Handle save search modal first (highest priority)
+		// Handle pack selector modal first (highest priority)
+		if m.packSelectorModal != nil && m.packSelectorModal.IsActive() {
+			var cmd tea.Cmd
+			m.packSelectorModal, cmd = m.packSelectorModal.Update(msg)
+			
+			// Check if apply was requested
+			if m.packSelectorModal.ShouldApply() {
+				m.selectedPacks = m.packSelectorModal.GetSelectedPacks()
+				m.packSelectorModal.Hide()
+				
+				// Update prompt list based on selected packs
+				if err := m.refreshPromptListByPacks(); err != nil {
+					m.statusMsg = fmt.Sprintf("Failed to refresh list: %v", err)
+					m.statusTimeout = 3
+					return m, clearStatusCmd()
+				}
+				
+				// Show status message
+				if len(m.selectedPacks) == 1 && m.selectedPacks[0] == "personal" {
+					m.statusMsg = "Viewing personal library"
+				} else if len(m.selectedPacks) == 1 {
+					m.statusMsg = fmt.Sprintf("Viewing %s pack", m.selectedPacks[0])
+				} else {
+					m.statusMsg = fmt.Sprintf("Viewing %d selected packs", len(m.selectedPacks))
+				}
+				m.statusTimeout = 2
+				return m, clearStatusCmd()
+			}
+			
+			// Check if modal was closed
+			if !m.packSelectorModal.IsActive() {
+				return m, nil
+			}
+			
+			return m, cmd
+		}
+
+		// Handle save search modal
 		if m.saveSearchModal != nil && m.saveSearchModal.IsActive() {
 			cmd := m.saveSearchModal.Update(msg)
 			
@@ -800,7 +851,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							}
 							m.statusTimeout = 2
 							// Refresh prompt list (respects active boolean search filter)
-							if err := m.refreshPromptList(); err != nil {
+							if err := m.refreshPromptListSmart(); err != nil {
 								m.statusMsg = fmt.Sprintf("Failed to refresh list: %v", err)
 								m.statusTimeout = 3
 							}
@@ -860,7 +911,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 								m.statusMsg = "Prompt deleted successfully!"
 								m.statusTimeout = 2
 								// Refresh prompt list (respects active boolean search filter)
-								if err := m.refreshPromptList(); err != nil {
+								if err := m.refreshPromptListSmart(); err != nil {
 									m.statusMsg = fmt.Sprintf("Failed to refresh list: %v", err)
 									m.statusTimeout = 3
 								}
@@ -995,7 +1046,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 
 		case key.Matches(msg, m.keys.New):
-			if m.viewMode == ViewLibrary && !m.loading {
+			if m.viewMode == ViewLibrary && !m.loading && !m.promptList.SettingFilter() {
 				// Initialize the create menu select form
 				options := []SelectOption{
 					{
@@ -1017,7 +1068,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Edit):
 			switch m.viewMode {
 			case ViewLibrary:
-				if !m.loading {
+				if !m.loading && !m.promptList.SettingFilter() {
 					if i, ok := m.promptList.SelectedItem().(*models.Prompt); ok {
 						// Load full prompt with content from service
 						fullPrompt, err := m.service.GetPrompt(i.ID)
@@ -1031,6 +1082,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if tags, err := m.service.GetAllTags(); err == nil {
 							m.createForm.SetAvailableTags(tags)
 						}
+						// Set available packs for autocomplete
+						if packs := m.service.GetAvailablePackNames(); len(packs) > 0 {
+							m.createForm.SetAvailablePacks(packs)
+						}
 						m.createForm.LoadPrompt(fullPrompt)
 						m.editMode = true
 						m.viewMode = ViewEditPrompt
@@ -1042,6 +1097,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Set available tags for autocomplete
 					if tags, err := m.service.GetAllTags(); err == nil {
 						m.createForm.SetAvailableTags(tags)
+					}
+					// Set available packs for autocomplete
+					if packs := m.service.GetAvailablePackNames(); len(packs) > 0 {
+						m.createForm.SetAvailablePacks(packs)
 					}
 					m.createForm.LoadPrompt(m.selectedPrompt)
 					m.editMode = true
@@ -1080,7 +1139,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 
 		case key.Matches(msg, m.keys.Templates):
-			if m.viewMode == ViewLibrary && !m.loading {
+			if m.viewMode == ViewLibrary && !m.loading && !m.promptList.SettingFilter() {
 				// Create template management select form
 				options := []SelectOption{
 					{
@@ -1141,7 +1200,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case key.Matches(msg, m.keys.SavedSearches):
-			if m.viewMode == ViewLibrary && !m.loading {
+			if m.viewMode == ViewLibrary && !m.loading && !m.promptList.SettingFilter() {
 				// Load saved searches
 				savedSearches, err := m.service.ListSavedSearches()
 				if err != nil {
@@ -1179,6 +1238,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectForm = NewSelectForm(options)
 				m.savedSearches = savedSearches
 				m.viewMode = ViewSavedSearches
+				return m, nil
+			}
+
+		case key.Matches(msg, m.keys.PackSelector):
+			if m.viewMode == ViewLibrary && !m.loading {
+				// Load available packs
+				availablePacks, err := m.service.GetAvailablePacks()
+				if err != nil {
+					m.statusMsg = fmt.Sprintf("Failed to load packs: %v", err)
+					m.statusTimeout = 3
+					return m, clearStatusCmd()
+				}
+				
+				// Initialize pack selector modal
+				if m.packSelectorModal == nil {
+					m.packSelectorModal = NewPackSelectorModal()
+				}
+				m.packSelectorModal.SetSize(m.width, m.height)
+				m.packSelectorModal.SetAvailablePacks(availablePacks)
+				m.packSelectorModal.SetSelectedPacks(m.selectedPacks)
+				m.packSelectorModal.Show()
 				return m, nil
 			}
 
@@ -1278,6 +1358,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if tags, err := m.service.GetAllTags(); err == nil {
 							m.createForm.SetAvailableTags(tags)
 						}
+						// Set available packs for autocomplete
+						if packs := m.service.GetAvailablePackNames(); len(packs) > 0 {
+							m.createForm.SetAvailablePacks(packs)
+						}
 					case "template":
 						// Initialize template selection
 						if len(m.templates) > 0 {
@@ -1345,7 +1429,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.statusMsg = "Prompt created successfully!"
 					m.statusTimeout = 2
 					// Refresh prompt list (respects active boolean search filter)
-					if err := m.refreshPromptList(); err != nil {
+					if err := m.refreshPromptListSmart(); err != nil {
 						m.statusMsg = fmt.Sprintf("Failed to refresh list: %v", err)
 						m.statusTimeout = 3
 					}
@@ -1447,6 +1531,18 @@ func (m Model) View() string {
 	// If the save search modal is active, render it on top (highest priority)
 	if m.saveSearchModal != nil && m.saveSearchModal.IsActive() {
 		modalView := m.saveSearchModal.View()
+		return lipgloss.Place(
+			m.width,
+			m.height,
+			lipgloss.Center,
+			lipgloss.Center,
+			modalView,
+		)
+	}
+
+	// If the pack selector modal is active, render it on top
+	if m.packSelectorModal != nil && m.packSelectorModal.IsActive() {
+		modalView := m.packSelectorModal.View()
 		return lipgloss.Place(
 			m.width,
 			m.height,
@@ -1682,6 +1778,11 @@ func (m Model) renderCreateFromScratchView() string {
 	descLabel := StyleFormLabel.Render("Description:")
 	formFields = append(formFields, descLabel, m.createForm.inputs[descriptionField].View(), "")
 
+	// Pack field
+	packLabel := StyleFormLabel.Render("Pack:")
+	packHelp := StyleFormHelp.Render("Select pack to save to (default: personal)")
+	formFields = append(formFields, packLabel, m.createForm.inputs[packField].View(), packHelp, "")
+
 	// Tags field
 	tagsLabel := StyleFormLabel.Render("Tags:")
 	tagsHelp := StyleFormHelp.Render("Use comma-separated values for organization and discovery • Ctrl+Space/→ to autocomplete")
@@ -1773,6 +1874,11 @@ func (m Model) renderEditPromptView() string {
 	// Description field
 	descLabel := StyleFormLabel.Render("Description:")
 	formFields = append(formFields, descLabel, m.createForm.inputs[descriptionField].View(), "")
+
+	// Pack field
+	packLabel := StyleFormLabel.Render("Pack:")
+	packHelp := StyleFormHelp.Render("Select pack to save to (default: personal)")
+	formFields = append(formFields, packLabel, m.createForm.inputs[packField].View(), packHelp, "")
 
 	// Tags field
 	tagsLabel := StyleFormLabel.Render("Tags:")
@@ -2296,6 +2402,70 @@ func (m *Model) refreshPromptList() error {
 	// Update list items
 	items := make([]list.Item, len(prompts))
 	for i, p := range prompts {
+		items[i] = p
+	}
+	m.promptList.SetItems(items)
+	
+	return nil
+}
+
+// refreshPromptListSmart intelligently refreshes the prompt list based on current context
+func (m *Model) refreshPromptListSmart() error {
+	// Check if we're currently showing pack-filtered results
+	if len(m.selectedPacks) > 0 && !(len(m.selectedPacks) == 1 && m.selectedPacks[0] == "personal") {
+		// We're showing pack-filtered results, use pack refresh
+		return m.refreshPromptListByPacks()
+	} else {
+		// We're showing personal/default results, use regular refresh
+		return m.refreshPromptList()
+	}
+}
+
+// refreshPromptListByPacks refreshes the prompt list with prompts from selected packs
+func (m *Model) refreshPromptListByPacks() error {
+	var allPrompts []*models.Prompt
+	
+	if len(m.selectedPacks) == 0 {
+		// If no packs selected, default to personal
+		m.selectedPacks = []string{"personal"}
+	}
+	
+	// Fetch prompts from each selected pack
+	for _, packName := range m.selectedPacks {
+		var prompts []*models.Prompt
+		var err error
+		
+		if packName == "personal" {
+			// Get all prompts from personal library
+			prompts, err = m.service.ListPrompts()
+		} else {
+			// Get prompts from specific pack
+			prompts, err = m.service.ListPromptsByPack(packName)
+		}
+		
+		if err != nil {
+			return fmt.Errorf("failed to list prompts from pack '%s': %w", packName, err)
+		}
+		
+		allPrompts = append(allPrompts, prompts...)
+	}
+	
+	// Deduplicate prompts by ID (in case of overlaps between personal and packs)
+	seen := make(map[string]bool)
+	deduplicatedPrompts := make([]*models.Prompt, 0, len(allPrompts))
+	for _, prompt := range allPrompts {
+		if !seen[prompt.ID] {
+			seen[prompt.ID] = true
+			deduplicatedPrompts = append(deduplicatedPrompts, prompt)
+		}
+	}
+	
+	// Update the model state
+	m.prompts = deduplicatedPrompts
+	
+	// Update list items
+	items := make([]list.Item, len(deduplicatedPrompts))
+	for i, p := range deduplicatedPrompts {
 		items[i] = p
 	}
 	m.promptList.SetItems(items)

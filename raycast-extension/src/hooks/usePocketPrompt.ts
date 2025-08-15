@@ -113,33 +113,58 @@ export function useSavedSearch(searchName: string | null) {
 }
 
 export function useUnifiedSearch(
-  query: string,
-  searchType: "fuzzy" | "boolean" | "saved",
+  fuzzyQuery: string,
+  booleanExpr: string,
+  searchType: "fuzzy" | "boolean" | "hybrid" | "saved",
   searchName?: string,
+  packNames?: string[],
 ) {
   return useCachedPromise(
     async (
-      searchQuery: string,
+      fuzzy: string,
+      expr: string,
       type: string,
       savedSearchName?: string,
+      packs?: string[],
     ): Promise<PocketPrompt[]> => {
-      if (!searchQuery.trim() && type !== "saved") {
-        return pocketPromptAPI.listAllPrompts();
+      if (!fuzzy.trim() && !expr.trim() && type !== "saved") {
+        // If no search query, return all prompts from the selected packs
+        if (packs && packs.length > 0) {
+          // Fetch prompts from multiple packs and combine them
+          const allPackPrompts = await Promise.all(
+            packs.map(pack => 
+              pack === "personal" 
+                ? pocketPromptAPI.listAllPrompts() 
+                : pocketPromptAPI.listPromptsByPack(pack)
+            )
+          );
+          // Flatten the arrays and deduplicate by ID
+          const combined = allPackPrompts.flat();
+          const seen = new Set<string>();
+          return combined.filter(prompt => {
+            if (seen.has(prompt.ID)) return false;
+            seen.add(prompt.ID);
+            return true;
+          });
+        } else {
+          return pocketPromptAPI.listAllPrompts();
+        }
       }
 
       switch (type) {
-        case "boolean":
-          return pocketPromptAPI.booleanSearch(searchQuery);
         case "saved":
           return savedSearchName
             ? pocketPromptAPI.executeSavedSearch(savedSearchName)
             : [];
+        case "boolean":
         case "fuzzy":
+        case "hybrid":
         default:
-          return pocketPromptAPI.searchPrompts(searchQuery);
+          // Use new API method that sends separate parameters
+          return pocketPromptAPI.hybridSearch(fuzzy, expr);
       }
     },
-    [query, searchType, searchName],
+    [fuzzyQuery, booleanExpr, searchType, searchName, packNames],
     {
       keepPreviousData: true,
       initialData: [],

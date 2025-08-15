@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dpshade/pocket-prompt/internal/config"
 	"github.com/dpshade/pocket-prompt/internal/git"
 	"github.com/dpshade/pocket-prompt/internal/importer"
 	"github.com/dpshade/pocket-prompt/internal/models"
@@ -19,18 +20,47 @@ import (
 // Service provides business logic for prompt management
 type Service struct {
 	storage       *storage.Storage
-	prompts       []*models.Prompt // Cached prompts for fast access
-	gitSync       *git.GitSync     // Git synchronization
+	prompts       []*models.Prompt             // Cached prompts for fast access
+	gitSync       *git.GitSync                 // Git synchronization
 	savedSearches *storage.SavedSearchesStorage // Saved boolean searches
+	packConfig    *config.PackConfig           // Pack configuration
 }
 
-// NewService creates a new service instance
+// NewService creates a new service instance 
 func NewService() (*Service, error) {
-	// Check for custom directory from environment
-	rootPath := os.Getenv("POCKET_PROMPT_DIR")
+	return NewServiceWithDirectory("")
+}
+
+// NewServiceWithDirectory creates a new service instance for a specific directory
+// If directory is empty, it uses POCKET_PROMPT_DIR or default ~/.pocket-prompt
+func NewServiceWithDirectory(directory string) (*Service, error) {
+	var rootPath string
+	
+	if directory != "" {
+		rootPath = directory
+	} else {
+		// Check for environment variable first (backward compatibility)
+		if envPath := os.Getenv("POCKET_PROMPT_DIR"); envPath != "" {
+			rootPath = envPath
+		} else {
+			// Use default
+			homeDir, err := os.UserHomeDir()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get home directory: %w", err)
+			}
+			rootPath = filepath.Join(homeDir, ".pocket-prompt")
+		}
+	}
+
 	store, err := storage.NewStorage(rootPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize storage: %w", err)
+	}
+
+	// Initialize pack configuration
+	packConfig, err := config.NewPackConfig(store.GetBaseDir())
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize pack configuration: %w", err)
 	}
 
 	// Initialize git sync
@@ -44,6 +74,7 @@ func NewService() (*Service, error) {
 		storage:       store,
 		gitSync:       gitSync,
 		savedSearches: savedSearches,
+		packConfig:    packConfig,
 	}
 
 	// Initialize git sync in background to avoid blocking startup
@@ -134,6 +165,32 @@ func (s *Service) ListPrompts() ([]*models.Prompt, error) {
 	return activePrompts, nil
 }
 
+// ListPromptsByPack returns prompts from a specific pack
+func (s *Service) ListPromptsByPack(packName string) ([]*models.Prompt, error) {
+	return s.storage.ListPromptsByPack(packName)
+}
+
+// GetAvailablePacks returns a map of available packs (displayName -> packName)
+func (s *Service) GetAvailablePacks() (map[string]string, error) {
+	packs := s.packConfig.ListPacks()
+	
+	result := make(map[string]string)
+	
+	// Always include personal library
+	result["Personal Library"] = "personal"
+	
+	// Add installed packs
+	for _, pack := range packs {
+		displayName := pack.Title
+		if pack.Title == "" {
+			displayName = pack.Name // Fallback to name if no title
+		}
+		result[displayName] = pack.Name
+	}
+	
+	return result, nil
+}
+
 // SearchPrompts searches prompts by query string
 func (s *Service) SearchPrompts(query string) ([]*models.Prompt, error) {
 	prompts, err := s.ListPrompts()
@@ -170,6 +227,7 @@ func (s *Service) SearchPrompts(query string) ([]*models.Prompt, error) {
 
 // GetPrompt returns a prompt by ID with full content loaded
 func (s *Service) GetPrompt(id string) (*models.Prompt, error) {
+	// First try to find in personal prompts cache
 	prompts, err := s.ListPrompts()
 	if err != nil {
 		return nil, err
@@ -189,6 +247,29 @@ func (s *Service) GetPrompt(id string) (*models.Prompt, error) {
 		}
 	}
 
+	// If not found in personal library, search in all packs
+	packs := s.packConfig.ListPacks()
+	for _, pack := range packs {
+		packPrompts, err := s.storage.ListPromptsByPack(pack.Name)
+		if err != nil {
+			continue // Skip packs that can't be read
+		}
+		
+		for _, p := range packPrompts {
+			if p.ID == id {
+				// If content is empty (from cache), load it from storage
+				if p.Content == "" && p.FilePath != "" {
+					fullPrompt, err := s.storage.LoadPrompt(p.FilePath)
+					if err != nil {
+						return nil, fmt.Errorf("failed to load prompt content: %w", err)
+					}
+					return fullPrompt, nil
+				}
+				return p, nil
+			}
+		}
+	}
+
 	return nil, fmt.Errorf("prompt not found: %s", id)
 }
 
@@ -201,7 +282,13 @@ func (s *Service) CreatePrompt(prompt *models.Prompt) error {
 
 	// Generate file path if not set
 	if prompt.FilePath == "" {
-		prompt.FilePath = filepath.Join("prompts", fmt.Sprintf("%s.md", prompt.ID))
+		if prompt.Pack != "" && prompt.Pack != "personal" {
+			// Route to pack directory
+			prompt.FilePath = filepath.Join("packs", prompt.Pack, "prompts", fmt.Sprintf("%s.md", prompt.ID))
+		} else {
+			// Route to personal library (default)
+			prompt.FilePath = filepath.Join("prompts", fmt.Sprintf("%s.md", prompt.ID))
+		}
 	}
 
 	// Save to storage
@@ -209,12 +296,23 @@ func (s *Service) CreatePrompt(prompt *models.Prompt) error {
 		return err
 	}
 
-	// Sync to git if enabled
-	if s.gitSync.IsEnabled() {
-		if err := s.gitSync.SyncChanges(fmt.Sprintf("Create prompt: %s", prompt.Title())); err != nil {
-			// Don't fail the operation if git sync fails, just log it
-			// The prompt was saved successfully to local storage
-			fmt.Printf("Warning: Git sync failed after creating prompt: %v\n", err)
+	// Sync to pack Git repo if prompt is in a pack with write access
+	if prompt.Pack != "" && prompt.Pack != "personal" {
+		if pack, err := s.packConfig.GetPack(prompt.Pack); err == nil && pack.GitSyncEnabled && pack.HasWriteAccess {
+			go func() {
+				if err := s.packConfig.SyncPackToGit(prompt.Pack, fmt.Sprintf("Create prompt: %s", prompt.Title())); err != nil {
+					fmt.Printf("Warning: Pack Git sync failed after creating prompt: %v\n", err)
+				}
+			}()
+		}
+	} else {
+		// Sync to personal git if enabled
+		if s.gitSync.IsEnabled() {
+			if err := s.gitSync.SyncChanges(fmt.Sprintf("Create prompt: %s", prompt.Title())); err != nil {
+				// Don't fail the operation if git sync fails, just log it
+				// The prompt was saved successfully to local storage
+				fmt.Printf("Warning: Git sync failed after creating prompt: %v\n", err)
+			}
 		}
 	}
 
@@ -242,23 +340,65 @@ func (s *Service) UpdatePrompt(prompt *models.Prompt) error {
 	}
 	prompt.Version = newVersion
 
-	// Update timestamp but keep original creation time and file path
+	// Update timestamp but keep original creation time
 	prompt.CreatedAt = existing.CreatedAt
 	prompt.UpdatedAt = time.Now()
-	if prompt.FilePath == "" {
-		prompt.FilePath = existing.FilePath // Keep original file path
+	
+	// Check if pack has changed and update file path accordingly
+	packChanged := false
+	existingPack := existing.Pack
+	if existingPack == "" {
+		existingPack = "personal" // Default pack for existing prompts without pack
+	}
+	newPack := prompt.Pack
+	if newPack == "" {
+		newPack = "personal" // Default pack for new prompts without pack
+	}
+	
+	if existingPack != newPack {
+		packChanged = true
+		// Generate new file path for the new pack
+		if newPack != "personal" {
+			prompt.FilePath = filepath.Join("packs", newPack, "prompts", fmt.Sprintf("%s.md", prompt.ID))
+		} else {
+			prompt.FilePath = filepath.Join("prompts", fmt.Sprintf("%s.md", prompt.ID))
+		}
+	} else {
+		// Keep original file path if pack hasn't changed
+		if prompt.FilePath == "" {
+			prompt.FilePath = existing.FilePath
+		}
 	}
 
 	// Save the new version (without archive tag)
 	if err := s.storage.SavePrompt(prompt); err != nil {
 		return err
 	}
+	
+	// If pack changed, delete the old file
+	if packChanged {
+		if err := s.storage.DeletePrompt(existing); err != nil {
+			// Log warning but don't fail the operation - new file was saved successfully
+			fmt.Printf("Warning: Failed to delete old prompt file at %s: %v\n", existing.FilePath, err)
+		}
+	}
 
-	// Sync to git if enabled
-	if s.gitSync.IsEnabled() {
-		if err := s.gitSync.SyncChanges(fmt.Sprintf("Update prompt: %s (v%s)", prompt.Title(), prompt.Version)); err != nil {
-			// Don't fail the operation if git sync fails, just log it
-			fmt.Printf("Warning: Git sync failed after updating prompt: %v\n", err)
+	// Sync to pack Git repo if prompt is in a pack with write access
+	if prompt.Pack != "" && prompt.Pack != "personal" {
+		if pack, err := s.packConfig.GetPack(prompt.Pack); err == nil && pack.GitSyncEnabled && pack.HasWriteAccess {
+			go func() {
+				if err := s.packConfig.SyncPackToGit(prompt.Pack, fmt.Sprintf("Update prompt: %s (v%s)", prompt.Title(), prompt.Version)); err != nil {
+					fmt.Printf("Warning: Pack Git sync failed after updating prompt: %v\n", err)
+				}
+			}()
+		}
+	} else {
+		// Sync to personal git if enabled
+		if s.gitSync.IsEnabled() {
+			if err := s.gitSync.SyncChanges(fmt.Sprintf("Update prompt: %s (v%s)", prompt.Title(), prompt.Version)); err != nil {
+				// Don't fail the operation if git sync fails, just log it
+				fmt.Printf("Warning: Git sync failed after updating prompt: %v\n", err)
+			}
 		}
 	}
 
@@ -278,11 +418,22 @@ func (s *Service) DeletePrompt(id string) error {
 		return fmt.Errorf("failed to delete prompt file: %w", err)
 	}
 
-	// Sync to git if enabled
-	if s.gitSync.IsEnabled() {
-		if err := s.gitSync.SyncChanges(fmt.Sprintf("Delete prompt: %s", prompt.Title())); err != nil {
-			// Don't fail the operation if git sync fails, just log it
-			fmt.Printf("Warning: Git sync failed after deleting prompt: %v\n", err)
+	// Sync to pack Git repo if prompt is in a pack with write access
+	if prompt.Pack != "" && prompt.Pack != "personal" {
+		if pack, err := s.packConfig.GetPack(prompt.Pack); err == nil && pack.GitSyncEnabled && pack.HasWriteAccess {
+			go func() {
+				if err := s.packConfig.SyncPackToGit(prompt.Pack, fmt.Sprintf("Delete prompt: %s", prompt.Title())); err != nil {
+					fmt.Printf("Warning: Pack Git sync failed after deleting prompt: %v\n", err)
+				}
+			}()
+		}
+	} else {
+		// Sync to personal git if enabled
+		if s.gitSync.IsEnabled() {
+			if err := s.gitSync.SyncChanges(fmt.Sprintf("Delete prompt: %s", prompt.Title())); err != nil {
+				// Don't fail the operation if git sync fails, just log it
+				fmt.Printf("Warning: Git sync failed after deleting prompt: %v\n", err)
+			}
 		}
 	}
 
@@ -1118,4 +1269,70 @@ func equalTemplateSlots(a, b []models.Slot) bool {
 		}
 	}
 	return true
+}
+
+// Pack Management Methods
+
+// ListPacks returns all installed packs
+func (s *Service) ListPacks() ([]config.Pack, error) {
+	return s.packConfig.ListPacks(), nil
+}
+
+// GetPack retrieves a specific pack by name
+func (s *Service) GetPack(name string) (*config.Pack, error) {
+	return s.packConfig.GetPack(name)
+}
+
+// InstallPackFromGit installs a pack from a Git repository
+func (s *Service) InstallPackFromGit(gitURL string, options config.PackInstallOptions) error {
+	installer := config.NewPackInstaller(s.packConfig)
+	return installer.InstallFromGit(gitURL, options)
+}
+
+// InstallPackFromDirectory installs a pack from a local directory
+func (s *Service) InstallPackFromDirectory(srcDir string, options config.PackInstallOptions) error {
+	installer := config.NewPackInstaller(s.packConfig)
+	return installer.InstallFromDirectory(srcDir, options)
+}
+
+// UninstallPack removes a pack
+func (s *Service) UninstallPack(name string) error {
+	installer := config.NewPackInstaller(s.packConfig)
+	return installer.UninstallPack(name)
+}
+
+// CreatePackScaffold creates a new pack structure
+func (s *Service) CreatePackScaffold(packDir, name, title, description, author string) error {
+	installer := config.NewPackInstaller(s.packConfig)
+	return installer.CreatePackScaffold(packDir, name, title, description, author)
+}
+
+// RefreshPackMetadata rescans all pack directories and updates metadata
+func (s *Service) RefreshPackMetadata() error {
+	return s.packConfig.RefreshPackMetadata()
+}
+
+// GetPacksByTag returns all packs that have the specified tag
+func (s *Service) GetPacksByTag(tag string) ([]config.Pack, error) {
+	return s.packConfig.GetPacksByTag(tag), nil
+}
+
+// IsPackInstalled checks if a pack with the given name is installed
+func (s *Service) IsPackInstalled(name string) bool {
+	return s.packConfig.IsPackInstalled(name)
+}
+
+// GetAvailablePackNames returns pack names available for prompt creation
+func (s *Service) GetAvailablePackNames() []string {
+	return s.packConfig.GetAvailablePackNames()
+}
+
+// GetPackSelectionOptions returns pack options formatted for UI selection
+func (s *Service) GetPackSelectionOptions() map[string]string {
+	return s.packConfig.GetPackSelectionOptions()
+}
+
+// IsValidPackName checks if a pack name is valid for selection
+func (s *Service) IsValidPackName(name string) bool {
+	return s.packConfig.IsValidPackName(name)
 }

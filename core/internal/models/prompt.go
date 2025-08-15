@@ -14,6 +14,7 @@ type Prompt struct {
 	Summary      string                 `yaml:"description"`
 	Tags         []string               `yaml:"tags"`
 	TemplateRef  string                 `yaml:"template,omitempty"`
+	Pack         string                 `yaml:"pack,omitempty"`
 	Metadata     map[string]interface{} `yaml:"metadata,omitempty"`
 	CreatedAt    time.Time              `yaml:"created_at"`
 	UpdatedAt    time.Time              `yaml:"updated_at"`
