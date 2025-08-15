@@ -12,17 +12,25 @@ import {
   useNavigation,
 } from "@raycast/api";
 import { useState, useEffect, useMemo } from "react";
-import { useUnifiedSearch, useServerHealth, useTags, useSavedSearches } from "./hooks/usePocketPrompt";
+import {
+  useUnifiedSearch,
+  useServerHealth,
+  useTags,
+  useSavedSearches,
+} from "./hooks/usePocketPrompt";
 import { PocketPrompt, RenderParams } from "./types";
 import { pocketPromptAPI } from "./utils/api";
-import { analyzeSearchQuery, formatBooleanExpression } from "./utils/searchDetection";
+import {
+  analyzeSearchQuery,
+  formatBooleanExpression,
+} from "./utils/searchDetection";
 import PromptDetailView from "./components/PromptDetailView";
 
-function VariableForm({ 
-  prompt, 
-  onSubmit 
-}: { 
-  prompt: PocketPrompt; 
+function VariableForm({
+  prompt,
+  onSubmit,
+}: {
+  prompt: PocketPrompt;
   onSubmit: (variables: RenderParams) => void;
 }) {
   const { pop } = useNavigation();
@@ -62,32 +70,48 @@ function VariableForm({
 export default function SearchPrompts() {
   const [searchText, setSearchText] = useState("");
   const [selectedFilter, setSelectedFilter] = useState<string>("");
-  
-  const { data: serverHealth, isLoading: healthLoading, error: healthError } = useServerHealth();
+
+  const {
+    data: serverHealth,
+    isLoading: healthLoading,
+    error: healthError,
+  } = useServerHealth();
   const { data: tags } = useTags();
   const { data: savedSearches } = useSavedSearches();
 
   // Smart search analysis
   const searchAnalysis = useMemo(() => {
     if (selectedFilter.startsWith("saved:")) {
-      return { type: 'saved' as const, query: searchText, searchName: selectedFilter.replace("saved:", "") };
+      return {
+        type: "saved" as const,
+        query: searchText,
+        searchName: selectedFilter.replace("saved:", ""),
+      };
     }
     if (selectedFilter.startsWith("tag:")) {
       const tag = selectedFilter.replace("tag:", "");
-      return { type: 'boolean' as const, query: tag };
+      return { type: "boolean" as const, query: tag };
     }
-    
+
     const analysis = analyzeSearchQuery(searchText);
-    return { 
-      type: analysis.type, 
-      query: analysis.type === 'boolean' ? formatBooleanExpression(searchText) : searchText 
+    return {
+      type: analysis.type,
+      query:
+        analysis.type === "boolean"
+          ? formatBooleanExpression(searchText)
+          : searchText,
     };
   }, [searchText, selectedFilter]);
 
-  const { data: prompts, isLoading, error, revalidate } = useUnifiedSearch(
+  const {
+    data: prompts,
+    isLoading,
+    error,
+    revalidate,
+  } = useUnifiedSearch(
     searchAnalysis.query,
     searchAnalysis.type,
-    searchAnalysis.searchName
+    searchAnalysis.searchName,
   );
 
   useEffect(() => {
@@ -105,7 +129,7 @@ export default function SearchPrompts() {
       if (prompt.Variables && prompt.Variables.length > 0) {
         return;
       }
-      
+
       const rendered = await pocketPromptAPI.renderPrompt(prompt.ID);
       await Clipboard.copy(rendered);
       showToast({
@@ -122,7 +146,10 @@ export default function SearchPrompts() {
     }
   };
 
-  const renderWithVariables = async (prompt: PocketPrompt, variables: RenderParams) => {
+  const renderWithVariables = async (
+    prompt: PocketPrompt,
+    variables: RenderParams,
+  ) => {
     try {
       const rendered = await pocketPromptAPI.renderPrompt(prompt.ID, variables);
       await Clipboard.copy(rendered);
@@ -140,18 +167,23 @@ export default function SearchPrompts() {
     }
   };
 
-
   const getAccessories = (prompt: PocketPrompt) => {
     const accessories = [];
-    
+
     if (prompt.Variables && prompt.Variables.length > 0) {
-      accessories.push({ text: `${prompt.Variables.length} vars`, icon: Icon.Gear });
+      accessories.push({
+        text: `${prompt.Variables.length} vars`,
+        icon: Icon.Gear,
+      });
     }
-    
+
     if (prompt.Tags && prompt.Tags.length > 0) {
-      accessories.push({ text: prompt.Tags.slice(0, 2).join(", "), icon: Icon.Tag });
+      accessories.push({
+        text: prompt.Tags.slice(0, 2).join(", "),
+        icon: Icon.Tag,
+      });
     }
-    
+
     return accessories;
   };
 
@@ -173,44 +205,44 @@ export default function SearchPrompts() {
       return {
         title: "No Results",
         description: `Saved search "${searchName}" returned no results`,
-        icon: Icon.Bookmark
+        icon: Icon.Bookmark,
       };
     }
-    
+
     if (selectedFilter.startsWith("tag:")) {
       const tag = selectedFilter.replace("tag:", "");
       return {
         title: "No Prompts",
         description: `No prompts found with tag "${tag}"`,
-        icon: Icon.Tag
+        icon: Icon.Tag,
       };
     }
 
     if (!searchText.trim()) {
       return {
         title: "Search Your Prompts",
-        description: 
+        description:
           `Start typing to search, or use the filter dropdown.\n\n` +
           `• Fuzzy search: "machine learning"\n` +
           `• Boolean search: "ai AND agent"\n` +
           `• Complex logic: "(design OR ui) AND NOT test"\n\n` +
           `Use Ctrl+P to access saved searches and tags.`,
-        icon: Icon.MagnifyingGlass
+        icon: Icon.MagnifyingGlass,
       };
     }
 
-    if (searchAnalysis.type === 'boolean') {
+    if (searchAnalysis.type === "boolean") {
       return {
         title: "No Boolean Results",
         description: `Boolean expression "${searchAnalysis.query}" returned no results`,
-        icon: Icon.Code
+        icon: Icon.Code,
       };
     }
 
     return {
       title: "No Results",
       description: `No prompts match "${searchText}"`,
-      icon: Icon.ExclamationMark
+      icon: Icon.ExclamationMark,
     };
   };
 
@@ -231,11 +263,11 @@ export default function SearchPrompts() {
           <List.Dropdown.Section title="All">
             <List.Dropdown.Item title="All Prompts" value="" />
           </List.Dropdown.Section>
-          
+
           {(savedSearches || []).length > 0 && (
             <List.Dropdown.Section title="Saved Searches">
               {(savedSearches || []).map((searchName) => (
-                <List.Dropdown.Item 
+                <List.Dropdown.Item
                   key={`saved:${searchName}`}
                   title={searchName}
                   value={`saved:${searchName}`}
@@ -244,11 +276,11 @@ export default function SearchPrompts() {
               ))}
             </List.Dropdown.Section>
           )}
-          
+
           {(tags || []).length > 0 && (
             <List.Dropdown.Section title="Tags">
               {(tags || []).map((tag) => (
-                <List.Dropdown.Item 
+                <List.Dropdown.Item
                   key={`tag:${tag}`}
                   title={tag}
                   value={`tag:${tag}`}
@@ -306,7 +338,9 @@ export default function SearchPrompts() {
             subtitle={prompt.Summary}
             accessories={[
               ...getAccessories(prompt),
-              ...(searchAnalysis.type === 'boolean' ? [{ text: "Boolean", icon: Icon.Code }] : [])
+              ...(searchAnalysis.type === "boolean"
+                ? [{ text: "Boolean", icon: Icon.Code }]
+                : []),
             ]}
             actions={
               <ActionPanel>
@@ -318,7 +352,9 @@ export default function SearchPrompts() {
                       target={
                         <VariableForm
                           prompt={prompt}
-                          onSubmit={(variables) => renderWithVariables(prompt, variables)}
+                          onSubmit={(variables) =>
+                            renderWithVariables(prompt, variables)
+                          }
                         />
                       }
                     />
@@ -332,7 +368,12 @@ export default function SearchPrompts() {
                   <Action.Push
                     title="Show Details"
                     icon={Icon.Eye}
-                    target={<PromptDetailView prompt={prompt} onRefresh={revalidate} />}
+                    target={
+                      <PromptDetailView
+                        prompt={prompt}
+                        onRefresh={revalidate}
+                      />
+                    }
                     shortcut={{ modifiers: ["shift"], key: "enter" }}
                   />
                   <Action

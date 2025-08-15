@@ -1,6 +1,6 @@
 // Type fixes for Raycast API JSX component compatibility
 declare namespace React {
-  type ReactNode = 
+  type ReactNode =
     | null
     | undefined
     | boolean
@@ -9,7 +9,7 @@ declare namespace React {
     | React.ReactElement
     | React.ReactNodeArray
     | React.ReactPortal;
-  
+
   interface ReactNodeArray extends ReadonlyArray<ReactNode> {}
 }
 

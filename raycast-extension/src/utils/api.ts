@@ -1,5 +1,11 @@
 import { getPreferenceValues } from "@raycast/api";
-import { PocketPrompt, PocketPromptTemplate, SearchResult, ServerStatus, RenderParams } from "../types";
+import {
+  PocketPrompt,
+  PocketPromptTemplate,
+  SearchResult,
+  ServerStatus,
+  RenderParams,
+} from "../types";
 
 interface Preferences {
   serverUrl: string;
@@ -16,12 +22,14 @@ export class PocketPromptAPI {
     const response = await fetch(`${baseUrl}${endpoint}`, {
       method: "GET",
       headers: {
-        "Accept": "application/json",
+        Accept: "application/json",
       },
     });
 
     if (!response.ok) {
-      throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+      throw new Error(
+        `API request failed: ${response.status} ${response.statusText}`,
+      );
     }
 
     return response.json() as Promise<T>;
@@ -32,12 +40,14 @@ export class PocketPromptAPI {
     const response = await fetch(`${baseUrl}${endpoint}`, {
       method: "GET",
       headers: {
-        "Accept": "text/plain",
+        Accept: "text/plain",
       },
     });
 
     if (!response.ok) {
-      throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+      throw new Error(
+        `API request failed: ${response.status} ${response.statusText}`,
+      );
     }
 
     return response.text();
@@ -49,7 +59,9 @@ export class PocketPromptAPI {
 
   async searchPrompts(query: string): Promise<PocketPrompt[]> {
     const encodedQuery = encodeURIComponent(query);
-    return this.request<PocketPrompt[]>(`/pocket-prompt/search?q=${encodedQuery}&format=json`);
+    return this.request<PocketPrompt[]>(
+      `/pocket-prompt/search?q=${encodedQuery}&format=json`,
+    );
   }
 
   async listAllPrompts(): Promise<PocketPrompt[]> {
@@ -62,7 +74,7 @@ export class PocketPromptAPI {
 
   async renderPrompt(id: string, variables?: RenderParams): Promise<string> {
     let endpoint = `/pocket-prompt/render/${id}?format=text`;
-    
+
     if (variables) {
       const params = new URLSearchParams();
       Object.entries(variables).forEach(([key, value]) => {
@@ -76,37 +88,50 @@ export class PocketPromptAPI {
 
   async getTags(): Promise<string[]> {
     const tagsText = await this.requestText("/pocket-prompt/tags");
-    return tagsText.split("\n").filter(tag => tag.trim() !== "");
+    return tagsText.split("\n").filter((tag) => tag.trim() !== "");
   }
 
   async getPromptsByTag(tag: string): Promise<PocketPrompt[]> {
-    return this.request<PocketPrompt[]>(`/pocket-prompt/tag/${encodeURIComponent(tag)}?format=json`);
+    return this.request<PocketPrompt[]>(
+      `/pocket-prompt/tag/${encodeURIComponent(tag)}?format=json`,
+    );
   }
 
   async listTemplates(): Promise<PocketPromptTemplate[]> {
-    return this.request<PocketPromptTemplate[]>("/pocket-prompt/templates?format=json");
+    return this.request<PocketPromptTemplate[]>(
+      "/pocket-prompt/templates?format=json",
+    );
   }
 
   async getTemplate(id: string): Promise<PocketPromptTemplate> {
-    return this.request<PocketPromptTemplate>(`/pocket-prompt/template/${id}?format=json`);
+    return this.request<PocketPromptTemplate>(
+      `/pocket-prompt/template/${id}?format=json`,
+    );
   }
 
   async booleanSearch(expression: string): Promise<PocketPrompt[]> {
     const encodedExpr = encodeURIComponent(expression);
-    return this.request<PocketPrompt[]>(`/pocket-prompt/boolean?expr=${encodedExpr}&format=json`);
+    return this.request<PocketPrompt[]>(
+      `/pocket-prompt/boolean?expr=${encodedExpr}&format=json`,
+    );
   }
 
   async listSavedSearches(): Promise<string[]> {
-    const savedSearchesText = await this.requestText("/pocket-prompt/saved-searches/list");
+    const savedSearchesText = await this.requestText(
+      "/pocket-prompt/saved-searches/list",
+    );
     // Parse the "name: expression" format
-    return savedSearchesText.split("\n")
-      .filter(line => line.trim() !== "")
-      .map(line => line.split(":")[0].trim());
+    return savedSearchesText
+      .split("\n")
+      .filter((line) => line.trim() !== "")
+      .map((line) => line.split(":")[0].trim());
   }
 
   async executeSavedSearch(searchName: string): Promise<PocketPrompt[]> {
     const encodedName = encodeURIComponent(searchName);
-    return this.request<PocketPrompt[]>(`/pocket-prompt/saved-search/${encodedName}?format=json`);
+    return this.request<PocketPrompt[]>(
+      `/pocket-prompt/saved-search/${encodedName}?format=json`,
+    );
   }
 }
 

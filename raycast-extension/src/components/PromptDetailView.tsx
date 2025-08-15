@@ -17,11 +17,11 @@ import { useState, useEffect } from "react";
 import { PocketPrompt, RenderParams } from "../types";
 import { pocketPromptAPI } from "../utils/api";
 
-function VariableForm({ 
-  prompt, 
-  onSubmit 
-}: { 
-  prompt: PocketPrompt; 
+function VariableForm({
+  prompt,
+  onSubmit,
+}: {
+  prompt: PocketPrompt;
   onSubmit: (variables: RenderParams) => void;
 }) {
   const { pop } = useNavigation();
@@ -63,7 +63,10 @@ interface PromptDetailViewProps {
   onRefresh?: () => void;
 }
 
-export default function PromptDetailView({ prompt, onRefresh }: PromptDetailViewProps) {
+export default function PromptDetailView({
+  prompt,
+  onRefresh,
+}: PromptDetailViewProps) {
   const [fullPrompt, setFullPrompt] = useState<PocketPrompt>(prompt);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -92,7 +95,7 @@ export default function PromptDetailView({ prompt, onRefresh }: PromptDetailView
       if (fullPrompt.Variables && fullPrompt.Variables.length > 0) {
         return;
       }
-      
+
       const rendered = await pocketPromptAPI.renderPrompt(fullPrompt.ID);
       await Clipboard.copy(rendered);
       showToast({
@@ -111,7 +114,10 @@ export default function PromptDetailView({ prompt, onRefresh }: PromptDetailView
 
   const renderWithVariables = async (variables: RenderParams) => {
     try {
-      const rendered = await pocketPromptAPI.renderPrompt(fullPrompt.ID, variables);
+      const rendered = await pocketPromptAPI.renderPrompt(
+        fullPrompt.ID,
+        variables,
+      );
       await Clipboard.copy(rendered);
       showToast({
         style: Toast.Style.Success,
@@ -164,12 +170,12 @@ export default function PromptDetailView({ prompt, onRefresh }: PromptDetailView
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+    return new Date(dateString).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   };
 
@@ -197,8 +203,8 @@ export default function PromptDetailView({ prompt, onRefresh }: PromptDetailView
     const maxLength = 80;
     if (summary.length <= maxLength) {
       return (
-        <Detail.Metadata.Label 
-          title="Summary" 
+        <Detail.Metadata.Label
+          title="Summary"
           text={summary}
           icon={Icon.Info}
         />
@@ -206,13 +212,13 @@ export default function PromptDetailView({ prompt, onRefresh }: PromptDetailView
     }
 
     // Split into multiple labels if too long
-    const words = summary.split(' ');
+    const words = summary.split(" ");
     const lines: string[] = [];
-    let currentLine = '';
+    let currentLine = "";
 
-    words.forEach(word => {
-      if ((currentLine + ' ' + word).length <= maxLength) {
-        currentLine = currentLine ? currentLine + ' ' + word : word;
+    words.forEach((word) => {
+      if ((currentLine + " " + word).length <= maxLength) {
+        currentLine = currentLine ? currentLine + " " + word : word;
       } else {
         if (currentLine) lines.push(currentLine);
         currentLine = word;
@@ -222,17 +228,13 @@ export default function PromptDetailView({ prompt, onRefresh }: PromptDetailView
 
     return (
       <>
-        <Detail.Metadata.Label 
-          title="Summary" 
+        <Detail.Metadata.Label
+          title="Summary"
           text={lines[0]}
           icon={Icon.Info}
         />
         {lines.slice(1).map((line, index) => (
-          <Detail.Metadata.Label 
-            key={index}
-            title=""
-            text={line}
-          />
+          <Detail.Metadata.Label key={index} title="" text={line} />
         ))}
       </>
     );
@@ -245,53 +247,57 @@ export default function PromptDetailView({ prompt, onRefresh }: PromptDetailView
       navigationTitle={fullPrompt.Name}
       metadata={
         <Detail.Metadata>
-          <Detail.Metadata.Label 
-            title="Name" 
-            text={fullPrompt.Name} 
+          <Detail.Metadata.Label
+            title="Name"
+            text={fullPrompt.Name}
             icon={getPromptIcon()}
           />
-          
+
           {fullPrompt.Summary && renderWrappedSummary(fullPrompt.Summary)}
-          
+
           <Detail.Metadata.Separator />
-          
-          <Detail.Metadata.Label 
-            title="ID" 
-            text={fullPrompt.ID} 
+
+          <Detail.Metadata.Label
+            title="ID"
+            text={fullPrompt.ID}
             icon={Icon.Hashtag}
           />
-          <Detail.Metadata.Label 
-            title="Version" 
+          <Detail.Metadata.Label
+            title="Version"
             text={fullPrompt.Version}
             icon={Icon.Number00}
           />
-          
+
           {fullPrompt.Tags && fullPrompt.Tags.length > 0 && (
             <Detail.Metadata.TagList title="Tags">
               {fullPrompt.Tags.map((tag) => (
-                <Detail.Metadata.TagList.Item key={tag} text={tag} color={Color.Blue} />
+                <Detail.Metadata.TagList.Item
+                  key={tag}
+                  text={tag}
+                  color={Color.Blue}
+                />
               ))}
             </Detail.Metadata.TagList>
           )}
-          
+
           <Detail.Metadata.Separator />
-          
-          <Detail.Metadata.Label 
-            title="Created" 
+
+          <Detail.Metadata.Label
+            title="Created"
             text={formatDate(fullPrompt.CreatedAt)}
             icon={Icon.Calendar}
           />
-          <Detail.Metadata.Label 
-            title="Updated" 
+          <Detail.Metadata.Label
+            title="Updated"
             text={formatDate(fullPrompt.UpdatedAt)}
             icon={Icon.Clock}
           />
-          
+
           {fullPrompt.Variables && fullPrompt.Variables.length > 0 && (
             <>
               <Detail.Metadata.Separator />
-              <Detail.Metadata.Label 
-                title="Variables" 
+              <Detail.Metadata.Label
+                title="Variables"
                 text={`${fullPrompt.Variables.length} variables defined`}
                 icon={Icon.Gear}
               />
@@ -299,27 +305,27 @@ export default function PromptDetailView({ prompt, onRefresh }: PromptDetailView
                 <Detail.Metadata.Label
                   key={variable.name}
                   title={variable.name}
-                  text={`${variable.type}${variable.required ? ' (required)' : ''}`}
+                  text={`${variable.type}${variable.required ? " (required)" : ""}`}
                   icon={Icon.Text}
                 />
               ))}
             </>
           )}
-          
+
           {fullPrompt.FilePath && (
             <>
               <Detail.Metadata.Separator />
-              <Detail.Metadata.Label 
-                title="File Path" 
+              <Detail.Metadata.Label
+                title="File Path"
                 text={fullPrompt.FilePath}
                 icon={Icon.Folder}
               />
             </>
           )}
-          
+
           {fullPrompt.TemplateRef && (
-            <Detail.Metadata.Label 
-              title="Template" 
+            <Detail.Metadata.Label
+              title="Template"
               text={fullPrompt.TemplateRef}
               icon={Icon.Document}
             />

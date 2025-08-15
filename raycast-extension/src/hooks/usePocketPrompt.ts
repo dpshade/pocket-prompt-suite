@@ -11,7 +11,7 @@ export function useServerHealth() {
     {
       keepPreviousData: true,
       initialData: undefined,
-    }
+    },
   );
 }
 
@@ -24,7 +24,7 @@ export function usePrompts() {
     {
       keepPreviousData: true,
       initialData: [],
-    }
+    },
   );
 }
 
@@ -40,7 +40,7 @@ export function useSearchPrompts(query: string) {
     {
       keepPreviousData: true,
       initialData: [],
-    }
+    },
   );
 }
 
@@ -53,7 +53,7 @@ export function useTags() {
     {
       keepPreviousData: true,
       initialData: [],
-    }
+    },
   );
 }
 
@@ -67,7 +67,7 @@ export function usePromptsByTag(tag: string | null) {
       execute: !!tag,
       keepPreviousData: true,
       initialData: [],
-    }
+    },
   );
 }
 
@@ -81,7 +81,7 @@ export function useBooleanSearch(expression: string) {
       execute: !!expression.trim(),
       keepPreviousData: true,
       initialData: [],
-    }
+    },
   );
 }
 
@@ -94,7 +94,7 @@ export function useSavedSearches() {
     {
       keepPreviousData: true,
       initialData: [],
-    }
+    },
   );
 }
 
@@ -108,23 +108,33 @@ export function useSavedSearch(searchName: string | null) {
       execute: !!searchName,
       keepPreviousData: true,
       initialData: [],
-    }
+    },
   );
 }
 
-export function useUnifiedSearch(query: string, searchType: 'fuzzy' | 'boolean' | 'saved', searchName?: string) {
+export function useUnifiedSearch(
+  query: string,
+  searchType: "fuzzy" | "boolean" | "saved",
+  searchName?: string,
+) {
   return useCachedPromise(
-    async (searchQuery: string, type: string, savedSearchName?: string): Promise<PocketPrompt[]> => {
-      if (!searchQuery.trim() && type !== 'saved') {
+    async (
+      searchQuery: string,
+      type: string,
+      savedSearchName?: string,
+    ): Promise<PocketPrompt[]> => {
+      if (!searchQuery.trim() && type !== "saved") {
         return pocketPromptAPI.listAllPrompts();
       }
 
       switch (type) {
-        case 'boolean':
+        case "boolean":
           return pocketPromptAPI.booleanSearch(searchQuery);
-        case 'saved':
-          return savedSearchName ? pocketPromptAPI.executeSavedSearch(savedSearchName) : [];
-        case 'fuzzy':
+        case "saved":
+          return savedSearchName
+            ? pocketPromptAPI.executeSavedSearch(savedSearchName)
+            : [];
+        case "fuzzy":
         default:
           return pocketPromptAPI.searchPrompts(searchQuery);
       }
@@ -133,6 +143,6 @@ export function useUnifiedSearch(query: string, searchType: 'fuzzy' | 'boolean' 
     {
       keepPreviousData: true,
       initialData: [],
-    }
+    },
   );
 }

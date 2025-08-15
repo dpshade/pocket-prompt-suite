@@ -58,17 +58,17 @@ export interface SavedSearch {
 }
 
 export interface BooleanSearchMode {
-  type: 'boolean';
+  type: "boolean";
   expression: string;
 }
 
 export interface SavedSearchMode {
-  type: 'saved';
+  type: "saved";
   searchName: string;
 }
 
 export interface FuzzySearchMode {
-  type: 'fuzzy';
+  type: "fuzzy";
   query: string;
 }
 
