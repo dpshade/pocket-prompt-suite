@@ -77,11 +77,23 @@ func NewServiceWithDirectory(directory string) (*Service, error) {
 		packConfig:    packConfig,
 	}
 
-	// Initialize git sync in background to avoid blocking startup
+	// Initialize git sync and auto-pull in background
 	go func() {
+		// Small delay to let service initialize
+		time.Sleep(50 * time.Millisecond)
+		
+		// Initialize git sync first
 		if err := gitSync.Initialize(); err != nil {
 			// Git sync initialization failure is not fatal
 			// The service can still work without git sync
+			return
+		}
+		
+		// Always attempt to pull latest changes on startup
+		// This ensures users get latest prompts automatically
+		if err := gitSync.AutoPullOnStartup(); err != nil {
+			// Pull failure is not fatal - user may be offline or have local changes
+			// Silently continue without error message
 		}
 	}()
 

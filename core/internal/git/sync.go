@@ -439,12 +439,29 @@ func (g *GitSync) getDetailedStatus() (string, error) {
 	return "In sync", nil
 }
 
+// AutoPullOnStartup pulls latest changes without checking enabled flag
+// This is used to ensure users always get the latest prompts
+func (g *GitSync) AutoPullOnStartup() error {
+	// Check if git is initialized and has remote
+	if !g.isGitInitialized() || !g.hasRemote() {
+		return nil // Silently skip if no git or remote
+	}
+	
+	// Delegate to the internal pull logic
+	return g.pullChangesInternal()
+}
+
 // PullChanges pulls changes from the remote repository with conflict resolution
 func (g *GitSync) PullChanges() error {
 	if !g.IsEnabled() {
 		return nil // Silently skip if not enabled
 	}
+	
+	return g.pullChangesInternal()
+}
 
+// pullChangesInternal contains the actual pull logic
+func (g *GitSync) pullChangesInternal() error {
 	// First, fetch the latest changes from remote
 	if err := g.runGitCommand("fetch", "origin"); err != nil {
 		return fmt.Errorf("failed to fetch from remote: %w", err)
@@ -460,11 +477,36 @@ func (g *GitSync) PullChanges() error {
 		return nil // Already up to date
 	}
 
+	// Check for uncommitted changes and stash them if present
+	statusCmd := exec.Command("git", "status", "--porcelain")
+	statusCmd.Dir = g.baseDir
+	statusOutput, _ := statusCmd.Output()
+	
+	hasChanges := len(strings.TrimSpace(string(statusOutput))) > 0
+	if hasChanges {
+		// Stash any local changes (especially cache files)
+		g.runGitCommand("stash", "push", "-m", "Auto-stash before pull")
+	}
+
 	// Try to pull with merge strategy
 	err = g.runGitCommand("pull", "origin", g.getCurrentBranch())
 	if err != nil {
 		// If pull failed, likely due to conflicts or divergent branches
+		if hasChanges {
+			// Try to restore stashed changes
+			g.runGitCommand("stash", "pop")
+		}
 		return g.handlePullConflict(err)
+	}
+
+	// If we stashed changes, restore them
+	if hasChanges {
+		// Use stash apply instead of pop to avoid conflicts
+		if err := g.runGitCommand("stash", "apply"); err != nil {
+			// If stash apply fails (due to conflicts), just drop it
+			// Cache files can be regenerated anyway
+			g.runGitCommand("stash", "drop")
+		}
 	}
 
 	return nil
