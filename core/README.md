@@ -303,6 +303,10 @@ Built-in HTTP API server for automation workflows and integrations.
 pocket-prompt --url-server                    # Start with git sync (default port 8080)
 pocket-prompt --url-server --port 9000        # Start on custom port
 pocket-prompt --url-server --no-git-sync      # Start without git synchronization
+
+# Run in background (daemon mode)
+nohup pocket-prompt --url-server > server.log 2>&1 &
+nohup pocket-prompt --url-server --port 9000 > server.log 2>&1 &
 ```
 
 #### API Endpoints
