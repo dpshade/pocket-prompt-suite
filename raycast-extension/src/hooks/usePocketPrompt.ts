@@ -129,10 +129,14 @@ export function useUnifiedSearch(
     ): Promise<PocketPrompt[]> => {
       if (!fuzzy.trim() && !expr.trim() && type !== "saved") {
         // If no query, return prompts based on pack selection
-        if (packs && packs.includes("__all__")) {
-          return pocketPromptAPI.listAllPrompts();
-        }
         if (packs && packs.length > 0) {
+          // Handle multiple pack selection
+          if (packs.length === 1 && packs[0] === "personal") {
+            // Just personal library
+            return pocketPromptAPI.listAllPrompts();
+          }
+          
+          // Multiple packs or non-personal packs
           const allPackPrompts = await Promise.all(
             packs.map(pack =>
               pack === "personal"
@@ -148,6 +152,7 @@ export function useUnifiedSearch(
             return true;
           });
         }
+        // Default to personal library if no packs specified
         return pocketPromptAPI.listAllPrompts();
       }
 
@@ -157,11 +162,14 @@ export function useUnifiedSearch(
             ? pocketPromptAPI.executeSavedSearch(savedSearchName)
             : [];
         case "boolean":
+          return pocketPromptAPI.booleanSearch(expr, packs);
         case "fuzzy":
+          return pocketPromptAPI.searchPrompts(fuzzy, packs);
         case "hybrid":
+          return pocketPromptAPI.hybridSearch(fuzzy, expr, packs);
         default:
-          // Use new API method that sends separate parameters
-          return pocketPromptAPI.hybridSearch(fuzzy, expr);
+          // Default to hybrid search with pack filtering
+          return pocketPromptAPI.hybridSearch(fuzzy, expr, packs);
       }
     },
     [fuzzyQuery, booleanExpr, searchType, searchName, packNames],

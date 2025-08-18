@@ -601,6 +601,11 @@ func (s *Service) IsGitSyncEnabled() bool {
 	return s.gitSync.IsEnabled()
 }
 
+// GetBaseDir returns the base directory for the prompt library
+func (s *Service) GetBaseDir() string {
+	return s.storage.GetBaseDir()
+}
+
 // GetGitSyncStatus returns the current git sync status
 func (s *Service) GetGitSyncStatus() (string, error) {
 	return s.gitSync.GetStatus()
@@ -614,6 +619,16 @@ func (s *Service) EnableGitSync() {
 // DisableGitSync disables git synchronization
 func (s *Service) DisableGitSync() {
 	s.gitSync.Disable()
+}
+
+// AutoPullOnStartup pulls latest changes from remote without checking enabled flag
+func (s *Service) AutoPullOnStartup() error {
+	return s.gitSync.AutoPullOnStartup()
+}
+
+// StartBackgroundSync starts background git synchronization
+func (s *Service) StartBackgroundSync(ctx context.Context, interval time.Duration) {
+	s.gitSync.BackgroundSync(ctx, interval)
 }
 
 // SetupGitRepository configures Git sync with the provided repository URL

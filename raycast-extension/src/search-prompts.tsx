@@ -40,7 +40,7 @@ export default function SearchPrompts({ initialSearchMode }: SearchPromptsProps 
     return "";
   });
   const [selectedFilter, setSelectedFilter] = useState<string>("");
-  const [selectedPacks, setSelectedPacks] = useState<string[]>(["__all__"]);
+  const [selectedPacks, setSelectedPacks] = useState<string[]>(["personal"]);
 
   const {
     data: serverHealth,
@@ -70,12 +70,14 @@ export default function SearchPrompts({ initialSearchMode }: SearchPromptsProps 
   // Handle special dropdown actions
   useEffect(() => {
     if (selectedFilter === "context:all") {
-      if (JSON.stringify(selectedPacks) !== JSON.stringify(["__all__"])) {
-        setSelectedPacks(["__all__"]);
-      }
+      // When "All Prompts" is selected from dropdown, fetch available packs and select all
+      pocketPromptAPI.getAvailablePacks().then(packs => {
+        const allPackNames = Object.values(packs);
+        setSelectedPacks(allPackNames);
+      });
       setSelectedFilter("");
     }
-  }, [selectedFilter, selectedPacks]);
+  }, [selectedFilter]);
 
   // Parse bracket syntax and create search analysis
   const searchAnalysis = useMemo(() => {
@@ -153,7 +155,14 @@ export default function SearchPrompts({ initialSearchMode }: SearchPromptsProps 
 
   const copyPromptToClipboard = async (prompt: PocketPrompt) => {
     try {
-      await Clipboard.copy(prompt.Content);
+      // Fetch the full prompt with content if not already present
+      let content = prompt.Content;
+      if (!content) {
+        const fullPrompt = await pocketPromptAPI.getPrompt(prompt.ID);
+        content = fullPrompt.Content;
+      }
+      
+      await Clipboard.copy(content);
       showToast({
         style: Toast.Style.Success,
         title: "Copied to Clipboard",
@@ -386,7 +395,14 @@ export default function SearchPrompts({ initialSearchMode }: SearchPromptsProps 
                     title="Copy Raw Content"
                     icon={Icon.Document}
                     onAction={async () => {
-                      await Clipboard.copy(prompt.Content);
+                      // Fetch the full prompt with content if not already present
+                      let content = prompt.Content;
+                      if (!content) {
+                        const fullPrompt = await pocketPromptAPI.getPrompt(prompt.ID);
+                        content = fullPrompt.Content;
+                      }
+                      
+                      await Clipboard.copy(content);
                       showToast({
                         style: Toast.Style.Success,
                         title: "Copied Raw Content",
@@ -402,7 +418,7 @@ export default function SearchPrompts({ initialSearchMode }: SearchPromptsProps 
                     onAction={() => {
                       setSelectedFilter("");
                       setSearchText("");
-                      setSelectedPacks(["__all__"]);
+                      setSelectedPacks(["personal"]);
                     }}
                     shortcut={{ modifiers: ["cmd", "shift"], key: "k" }}
                   />

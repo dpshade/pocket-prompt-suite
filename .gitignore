@@ -107,4 +107,10 @@ core/archive/
 core/prompts/
 core/templates/
 core/packs/
+core/test-library/core/pkt
+core/pkt
+core/.crush/
 core/test-library/
+*.db
+*.db-*
+.claude/

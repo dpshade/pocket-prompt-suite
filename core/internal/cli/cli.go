@@ -1,6 +1,64 @@
+// Package cli provides the command-line interface for pocket-prompt.
+//
+// SYSTEM ARCHITECTURE ROLE:
+// This module implements the CLI interface layer, translating command-line arguments
+// into unified command executions while providing a rich terminal experience with
+// detailed help, error formatting, and output formatting options.
+//
+// KEY RESPONSIBILITIES:
+// - Parse command-line arguments and convert to command parameters
+// - Execute commands through the unified command system
+// - Format command outputs for terminal display (table, JSON, plain text)
+// - Provide comprehensive help system and usage documentation
+// - Handle CLI-specific operations (imports, exports, git operations)
+//
+// INTEGRATION POINTS:
+// - internal/commands/types.go: CLI.executor (CommandExecutor) handles list, search, boolean-search commands
+// - internal/errors/handlers.go: CLI.errorHandler (CLIErrorHandler) formats terminal error display
+// - internal/service/service.go: Direct service integration for complex operations (git, import, packs)
+// - internal/validation/validator.go: Command parameters validated through unified command system
+// - internal/models/prompt.go: Direct model access for prompt formatting in formatOutput()
+// - internal/config/config.go: Pack operations and configuration management
+// - internal/importer/importer.go: Import operations for Claude Code and Git repositories
+// - main.go: CLI.ExecuteCommand() called from main application entry point
+//
+// COMMAND CATEGORIES:
+// - Core Prompts: list, search, get, create, edit, delete, copy
+// - Search Operations: search, boolean-search, saved searches
+// - Templates: template management and operations
+// - System: tags, packs, health, configuration
+// - Import/Export: File and Git repository import/export
+// - Git Integration: Repository setup, sync, status
+//
+// OUTPUT FORMATS:
+// - Default: Human-readable format with descriptions and metadata
+// - JSON: Machine-readable format for scripting and integration
+// - Table: Tabular format for structured data display
+// - IDs: Simple ID list for scripting and piping
+//
+// ERROR HANDLING:
+// - Unified errors: Uses CLI error handler for consistent formatting
+// - Severity display: Icons and colors based on error severity
+// - Context preservation: Detailed error context for debugging
+// - User guidance: Helpful error messages with suggested actions
+//
+// USAGE PATTERNS:
+// - Main entry: ExecuteCommand() processes all CLI interactions
+// - Command routing: Switch statement routes to appropriate handlers
+// - Parameter parsing: Helper methods extract and validate parameters
+// - Output formatting: Consistent formatting across all command outputs
+//
+// FUTURE DEVELOPMENT:
+// - Interactive mode: Add interactive prompts for complex operations
+// - Autocomplete: Shell completion support for commands and parameters
+// - Configuration: User configuration file support for defaults
+// - Scripting: Enhanced scripting support with machine-readable outputs
+// - Progress indicators: Progress bars for long-running operations
+// - Colored output: Configurable color support for better terminal experience
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,7 +66,9 @@ import (
 	"strings"
 
 	"github.com/dpshade/pocket-prompt/internal/clipboard"
+	"github.com/dpshade/pocket-prompt/internal/commands"
 	"github.com/dpshade/pocket-prompt/internal/config"
+	"github.com/dpshade/pocket-prompt/internal/errors"
 	"github.com/dpshade/pocket-prompt/internal/importer"
 	"github.com/dpshade/pocket-prompt/internal/models"
 	"github.com/dpshade/pocket-prompt/internal/renderer"
@@ -17,101 +77,73 @@ import (
 
 // CLI provides headless command-line interface functionality
 type CLI struct {
-	service *service.Service
+	service      *service.Service
+	executor     *commands.CommandExecutor
+	errorHandler *errors.CLIErrorHandler
 }
 
 // NewCLI creates a new CLI instance
 func NewCLI(svc *service.Service) *CLI {
-	return &CLI{service: svc}
+	verbose := os.Getenv("DEBUG") == "true" || os.Getenv("VERBOSE") == "true"
+	return &CLI{
+		service:      svc,
+		executor:     commands.NewCommandExecutor(svc),
+		errorHandler: errors.NewCLIErrorHandler(verbose),
+	}
 }
 
-// Simple boolean expression parser
+// parseBooleanExpression delegates to the shared parser in models package
 func parseBooleanExpression(expr string) (*models.BooleanExpression, error) {
-	expr = strings.TrimSpace(expr)
-	
-	// Handle parentheses by finding the innermost ones first
-	for {
-		start := -1
-		for i, r := range expr {
-			if r == '(' {
-				start = i
-			} else if r == ')' && start >= 0 {
-				// Found innermost parentheses
-				inner := expr[start+1 : i]
-				_, err := parseBooleanExpressionSimple(inner)
-				if err != nil {
-					return nil, err
-				}
-				// Replace the parentheses with a placeholder
-				// For simplicity, we'll just parse the simple case for now
-				return parseBooleanExpressionSimple(expr)
-			}
-		}
-		break
-	}
-	
-	return parseBooleanExpressionSimple(expr)
+	return models.ParseBooleanExpression(expr)
 }
 
-func parseBooleanExpressionSimple(expr string) (*models.BooleanExpression, error) {
-	expr = strings.TrimSpace(expr)
-	
-	// Handle NOT expressions
-	if strings.HasPrefix(strings.ToUpper(expr), "NOT ") {
-		inner := strings.TrimSpace(expr[4:])
-		innerExpr, err := parseBooleanExpressionSimple(inner)
-		if err != nil {
-			return nil, err
-		}
-		return models.NewNotExpression(innerExpr), nil
+// executeUnifiedCommand executes a command using the unified command system
+func (c *CLI) executeUnifiedCommand(commandName string, params map[string]interface{}) error {
+	ctx := context.Background()
+	result, err := c.executor.Execute(ctx, commandName, params)
+	if err != nil {
+		return c.errorHandler.HandleError(err)
 	}
 	
-	// Handle OR expressions (lower precedence)
-	if orParts := strings.Split(expr, " OR "); len(orParts) > 1 {
-		var expressions []*models.BooleanExpression
-		for _, part := range orParts {
-			subExpr, err := parseBooleanExpressionSimple(strings.TrimSpace(part))
-			if err != nil {
-				return nil, err
+	if !result.Success {
+		if result.Error != nil {
+			// Create an AppError from the ErrorInfo for proper handling
+			appErr := &errors.AppError{
+				Code:     errors.ErrorCode(result.Error.Code),
+				Message:  result.Error.Message,
+				Details:  result.Error.Details,
+				Category: errors.ErrorCategory(result.Error.Category),
+				Severity: errors.ErrorSeverity(result.Error.Severity),
 			}
-			expressions = append(expressions, subExpr)
+			return c.errorHandler.HandleError(appErr)
 		}
-		return models.NewOrExpression(expressions...), nil
+		return c.errorHandler.HandleError(errors.InternalError("command failed"))
 	}
 	
-	// Handle AND expressions (higher precedence)
-	if andParts := strings.Split(expr, " AND "); len(andParts) > 1 {
-		var expressions []*models.BooleanExpression
-		for _, part := range andParts {
-			subExpr, err := parseBooleanExpressionSimple(strings.TrimSpace(part))
-			if err != nil {
-				return nil, err
+	// Handle output based on data type
+	if result.Data != nil {
+		switch data := result.Data.(type) {
+		case []*models.Prompt:
+			c.printPrompts(data, "")
+		case []string:
+			for _, item := range data {
+				fmt.Println(item)
 			}
-			expressions = append(expressions, subExpr)
+		case map[string]interface{}:
+			// Print as JSON for complex data
+			if jsonData, err := json.MarshalIndent(data, "", "  "); err == nil {
+				fmt.Println(string(jsonData))
+			}
+		default:
+			fmt.Printf("%v\n", data)
 		}
-		return models.NewAndExpression(expressions...), nil
 	}
 	
-	// Handle XOR expressions
-	if xorParts := strings.Split(expr, " XOR "); len(xorParts) == 2 {
-		left, err := parseBooleanExpressionSimple(strings.TrimSpace(xorParts[0]))
-		if err != nil {
-			return nil, err
-		}
-		right, err := parseBooleanExpressionSimple(strings.TrimSpace(xorParts[1]))
-		if err != nil {
-			return nil, err
-		}
-		return models.NewXorExpression(left, right), nil
+	if result.Message != "" {
+		fmt.Printf("# %s\n", result.Message)
 	}
 	
-	// Remove parentheses if present
-	if strings.HasPrefix(expr, "(") && strings.HasSuffix(expr, ")") {
-		return parseBooleanExpressionSimple(expr[1 : len(expr)-1])
-	}
-	
-	// Single tag expression
-	return models.NewTagExpression(expr), nil
+	return nil
 }// ExecuteCommand processes a CLI command and returns the result
 func (c *CLI) ExecuteCommand(args []string) error {
 	if len(args) == 0 {
@@ -123,9 +155,18 @@ func (c *CLI) ExecuteCommand(args []string) error {
 
 	switch command {
 	case "list", "ls":
-		return c.listPrompts(commandArgs)
+		// Use unified command system for list
+		params := c.parseListArgs(commandArgs)
+		return c.executeUnifiedCommand("list", params)
 	case "search":
-		return c.searchPrompts(commandArgs)
+		// Use unified command system for search
+		if len(commandArgs) == 0 {
+			return fmt.Errorf("search query is required")
+		}
+		params := map[string]interface{}{
+			"query": commandArgs[0],
+		}
+		return c.executeUnifiedCommand("search", params)
 	case "get", "show":
 		return c.showPrompt(commandArgs)
 	case "create", "new":
@@ -147,7 +188,14 @@ func (c *CLI) ExecuteCommand(args []string) error {
 	case "search-saved":
 		return c.handleSavedSearches(commandArgs)
 	case "boolean-search":
-		return c.handleBooleanSearch(commandArgs)
+		// Use unified command system for boolean search
+		if len(commandArgs) == 0 {
+			return fmt.Errorf("boolean expression is required")
+		}
+		params := map[string]interface{}{
+			"expression": strings.Join(commandArgs, " "),
+		}
+		return c.executeUnifiedCommand("boolean-search", params)
 	case "export":
 		return c.handleExport(commandArgs)
 	case "import":
@@ -2286,4 +2334,35 @@ func (c *CLI) formatPacksJSON(packs []config.Pack) error {
 	}
 	fmt.Println(string(jsonData))
 	return nil
+}
+
+// parseListArgs parses command line arguments for the list command
+func (c *CLI) parseListArgs(args []string) map[string]interface{} {
+	params := make(map[string]interface{})
+	
+	for i, arg := range args {
+		switch arg {
+		case "--format", "-f":
+			if i+1 < len(args) {
+				params["format"] = args[i+1]
+			}
+		case "--tag", "-t":
+			if i+1 < len(args) {
+				params["tag"] = args[i+1]
+			}
+		case "--pack", "-p":
+			if i+1 < len(args) {
+				params["pack"] = args[i+1]
+			}
+		case "--archived", "-a":
+			params["archived"] = true
+		}
+	}
+	
+	return params
+}
+
+// printPrompts prints a list of prompts using the existing formatOutput method
+func (c *CLI) printPrompts(prompts []*models.Prompt, format string) {
+	c.formatOutput(prompts, format)
 }

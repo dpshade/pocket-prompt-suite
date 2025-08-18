@@ -5,9 +5,22 @@ interface Preferences {
   serverUrl: string;
 }
 
+// APIResponse structure from the new API server
+interface APIResponse<T> {
+  success: boolean;
+  data?: T;
+  message?: string;
+  error?: any;
+  timestamp: string;
+}
+
 function getServerUrl(): string {
   const preferences = getPreferenceValues<Preferences>();
   return preferences.serverUrl || "http://localhost:8080";
+}
+
+function getApiBaseUrl(): string {
+  return `${getServerUrl()}/api/v1`;
 }
 
 export class PocketPromptAPI {
@@ -15,7 +28,7 @@ export class PocketPromptAPI {
     endpoint: string,
     options?: RequestInit,
   ): Promise<T> {
-    const baseUrl = getServerUrl();
+    const baseUrl = getApiBaseUrl();
     const response = await fetch(`${baseUrl}${endpoint}`, {
       method: "GET",
       headers: {
@@ -30,35 +43,32 @@ export class PocketPromptAPI {
       );
     }
 
-    return response.json() as Promise<T>;
-  }
-
-  private async requestText(endpoint: string): Promise<string> {
-    const baseUrl = getServerUrl();
-    const response = await fetch(`${baseUrl}${endpoint}`, {
-      method: "GET",
-      headers: {
-        Accept: "text/plain",
-      },
-    });
-
-    if (!response.ok) {
+    const apiResponse = await response.json() as APIResponse<T>;
+    
+    if (!apiResponse.success) {
       throw new Error(
-        `API request failed: ${response.status} ${response.statusText}`,
+        apiResponse.error?.message || apiResponse.message || "API request failed"
       );
     }
 
-    return response.text();
+    return apiResponse.data as T;
   }
+
 
   async checkHealth(): Promise<ServerStatus> {
     return this.request<ServerStatus>("/health");
   }
 
-  async searchPrompts(query: string): Promise<PocketPrompt[]> {
-    const encodedQuery = encodeURIComponent(query);
+  async searchPrompts(query: string, packs?: string[]): Promise<PocketPrompt[]> {
+    const params = new URLSearchParams();
+    params.append("q", query);
+    
+    if (packs && packs.length > 0) {
+      params.append("packs", packs.join(","));
+    }
+    
     return this.request<PocketPrompt[]>(
-      `/search?q=${encodedQuery}`,
+      `/search?${params.toString()}`,
     );
   }
 
@@ -76,8 +86,7 @@ export class PocketPromptAPI {
   }
 
   async getTags(): Promise<string[]> {
-    const tagsText = await this.requestText("/tags");
-    return tagsText.split("\n").filter((tag) => tag.trim() !== "");
+    return this.request<string[]>("/tags");
   }
 
   async getPromptsByTag(tag: string): Promise<PocketPrompt[]> {
@@ -94,16 +103,23 @@ export class PocketPromptAPI {
     return this.request<PocketPromptTemplate>(`/templates/${id}`);
   }
 
-  async booleanSearch(expression: string): Promise<PocketPrompt[]> {
-    const encodedExpr = encodeURIComponent(expression);
+  async booleanSearch(expression: string, packs?: string[]): Promise<PocketPrompt[]> {
+    const params = new URLSearchParams();
+    params.append("expr", expression);
+    
+    if (packs && packs.length > 0) {
+      params.append("packs", packs.join(","));
+    }
+    
     return this.request<PocketPrompt[]>(
-      `/boolean?expr=${encodedExpr}`,
+      `/boolean-search?${params.toString()}`,
     );
   }
 
   async hybridSearch(
     fuzzyQuery: string,
     booleanExpr: string,
+    packs?: string[],
   ): Promise<PocketPrompt[]> {
     const params = new URLSearchParams();
 
@@ -113,6 +129,9 @@ export class PocketPromptAPI {
     if (booleanExpr.trim()) {
       params.append("expr", booleanExpr);
     }
+    if (packs && packs.length > 0) {
+      params.append("packs", packs.join(","));
+    }
 
     return this.request<PocketPrompt[]>(
       `/search?${params.toString()}`,
@@ -120,18 +139,12 @@ export class PocketPromptAPI {
   }
 
   async listSavedSearches(): Promise<string[]> {
-    const savedSearchesText = await this.requestText(
-      "/saved-searches/list",
-    );
-    // Parse the "name: expression" format
-    return savedSearchesText
-      .split("\n")
-      .filter((line) => line.trim() !== "")
-      .map((line) => line.split(":")[0].trim());
+    const savedSearches = await this.request<string[]>("/saved-searches");
+    return savedSearches;
   }
 
   async listSavedSearchesDetailed(): Promise<SavedSearch[]> {
-    return this.request<SavedSearch[]>("/saved-searches/list?format=json");
+    return this.request<SavedSearch[]>("/saved-searches?format=json");
   }
 
   async createSavedSearch(savedSearch: {
@@ -140,7 +153,7 @@ export class PocketPromptAPI {
     textQuery?: string;
   }): Promise<{ success: boolean; message: string }> {
     return this.request<{ success: boolean; message: string }>(
-      "/saved-searches/list",
+      "/saved-searches",
       {
         method: "POST",
         headers: {
@@ -159,7 +172,7 @@ export class PocketPromptAPI {
   async deleteSavedSearch(name: string): Promise<{ success: boolean; message: string }> {
     const encodedName = encodeURIComponent(name);
     return this.request<{ success: boolean; message: string }>(
-      `/saved-searches/delete/${encodedName}`,
+      `/saved-searches/${encodedName}`,
       {
         method: "DELETE",
         headers: {
@@ -194,8 +207,8 @@ export class PocketPromptAPI {
   }
 
   async getAvailablePacks(): Promise<{ [displayName: string]: string }> {
-    const response = await this.request<{ packs: { [displayName: string]: string }; success: boolean }>("/packs?format=json");
-    return response.packs;
+    const packs = await this.request<{ [displayName: string]: string }>("/packs?format=json");
+    return packs;
   }
 
   async createPrompt(prompt: {

@@ -211,6 +211,7 @@ func (s *URLServer) handleSearch(w http.ResponseWriter, r *http.Request) {
 	format := r.URL.Query().Get("format")
 	limitStr := r.URL.Query().Get("limit")
 	tag := r.URL.Query().Get("tag")
+	packs := r.URL.Query()["pack"] // Get all pack parameters as array
 	
 	var prompts []*models.Prompt
 	var err error
@@ -231,6 +232,41 @@ func (s *URLServer) handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Filter by packs if specified
+	if len(packs) > 0 {
+		// Get all prompts from specified packs
+		packPromptsMap := make(map[string]bool)
+		for _, packName := range packs {
+			var packPrompts []*models.Prompt
+			if packName == "personal" {
+				// Personal library prompts are already in the main prompts directory
+				personalPrompts, err := s.service.ListPrompts()
+				if err == nil {
+					packPrompts = personalPrompts
+				}
+			} else {
+				// Try to get pack prompts, but don't fail if pack doesn't exist
+				ppackPrompts, err := s.service.ListPromptsByPack(packName)
+				if err == nil {
+					packPrompts = ppackPrompts
+				}
+				// If pack doesn't exist, just continue without adding prompts
+			}
+			for _, p := range packPrompts {
+				packPromptsMap[p.ID] = true
+			}
+		}
+		
+		// Filter search results to only include prompts from selected packs
+		var filtered []*models.Prompt
+		for _, p := range prompts {
+			if packPromptsMap[p.ID] {
+				filtered = append(filtered, p)
+			}
+		}
+		prompts = filtered
+	}
+	
 	// Filter by tag if specified
 	if tag != "" {
 		var filtered []*models.Prompt
@@ -276,6 +312,7 @@ func (s *URLServer) handleBooleanSearch(w http.ResponseWriter, r *http.Request) 
 	}
 
 	format := r.URL.Query().Get("format")
+	packs := r.URL.Query()["pack"] // Get all pack parameters as array
 	
 	// URL decode the expression
 	decodedExpr, err := url.QueryUnescape(expr)
@@ -296,6 +333,41 @@ func (s *URLServer) handleBooleanSearch(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		s.writeError(w, fmt.Sprintf("Boolean search failed: %v", err), http.StatusInternalServerError)
 		return
+	}
+	
+	// Filter by packs if specified
+	if len(packs) > 0 {
+		// Get all prompts from specified packs
+		packPromptsMap := make(map[string]bool)
+		for _, packName := range packs {
+			var packPrompts []*models.Prompt
+			if packName == "personal" {
+				// Personal library prompts are already in the main prompts directory
+				personalPrompts, err := s.service.ListPrompts()
+				if err == nil {
+					packPrompts = personalPrompts
+				}
+			} else {
+				// Try to get pack prompts, but don't fail if pack doesn't exist
+				ppackPrompts, err := s.service.ListPromptsByPack(packName)
+				if err == nil {
+					packPrompts = ppackPrompts
+				}
+				// If pack doesn't exist, just continue without adding prompts
+			}
+			for _, p := range packPrompts {
+				packPromptsMap[p.ID] = true
+			}
+		}
+		
+		// Filter search results to only include prompts from selected packs
+		var filtered []*models.Prompt
+		for _, p := range prompts {
+			if packPromptsMap[p.ID] {
+				filtered = append(filtered, p)
+			}
+		}
+		prompts = filtered
 	}
 
 	content := s.formatPrompts(prompts, format)
@@ -639,7 +711,21 @@ func (s *URLServer) handleListPrompts(w http.ResponseWriter, r *http.Request) {
 	if tag != "" {
 		prompts, err = s.service.FilterPromptsByTag(tag)
 	} else if pack != "" {
-		prompts, err = s.service.ListPromptsByPack(pack)
+		if pack == "personal" {
+			// Personal library is the default prompts directory
+			prompts, err = s.service.ListPrompts()
+		} else {
+			// Try to get pack prompts, return empty list if pack doesn't exist
+			packPrompts, packErr := s.service.ListPromptsByPack(pack)
+			if packErr != nil {
+				// Pack doesn't exist, return empty list
+				prompts = []*models.Prompt{}
+				err = nil
+			} else {
+				prompts = packPrompts
+				err = nil
+			}
+		}
 	} else {
 		prompts, err = s.service.ListPrompts()
 	}
@@ -1019,54 +1105,9 @@ func (s *URLServer) writeError(w http.ResponseWriter, message string, statusCode
 	})
 }
 
-// parseBooleanExpression parses a boolean search expression
-// This is a simplified implementation - could be enhanced with a proper parser
+// parseBooleanExpression delegates to the shared parser in models package
 func (s *URLServer) parseBooleanExpression(expr string) (*models.BooleanExpression, error) {
-	expr = strings.TrimSpace(expr)
-	
-	// Handle NOT expressions
-	if strings.HasPrefix(strings.ToUpper(expr), "NOT ") {
-		inner := strings.TrimSpace(expr[4:])
-		innerExpr, err := s.parseBooleanExpression(inner)
-		if err != nil {
-			return nil, err
-		}
-		return models.NewNotExpression(innerExpr), nil
-	}
-	
-	// Handle OR expressions (lower precedence)
-	if orParts := strings.Split(expr, " OR "); len(orParts) > 1 {
-		var expressions []*models.BooleanExpression
-		for _, part := range orParts {
-			subExpr, err := s.parseBooleanExpression(strings.TrimSpace(part))
-			if err != nil {
-				return nil, err
-			}
-			expressions = append(expressions, subExpr)
-		}
-		return models.NewOrExpression(expressions...), nil
-	}
-	
-	// Handle AND expressions (higher precedence)
-	if andParts := strings.Split(expr, " AND "); len(andParts) > 1 {
-		var expressions []*models.BooleanExpression
-		for _, part := range andParts {
-			subExpr, err := s.parseBooleanExpression(strings.TrimSpace(part))
-			if err != nil {
-				return nil, err
-			}
-			expressions = append(expressions, subExpr)
-		}
-		return models.NewAndExpression(expressions...), nil
-	}
-	
-	// Remove parentheses if present
-	if strings.HasPrefix(expr, "(") && strings.HasSuffix(expr, ")") {
-		return s.parseBooleanExpression(expr[1 : len(expr)-1])
-	}
-	
-	// Single tag expression
-	return models.NewTagExpression(expr), nil
+	return models.ParseBooleanExpression(expr)
 }
 
 // startPeriodicSync runs git pull operations at regular intervals

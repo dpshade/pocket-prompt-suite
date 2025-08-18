@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dpshade/pocket-prompt/internal/api"
 	"github.com/dpshade/pocket-prompt/internal/cli"
-	"github.com/dpshade/pocket-prompt/internal/server"
 	"github.com/dpshade/pocket-prompt/internal/service"
 	"github.com/dpshade/pocket-prompt/internal/ui"
 
@@ -72,8 +72,7 @@ OPTIONS:
     --url-server    Start HTTP API server for integrations
     --restart       Kill any running URL server instances and restart
     --port          Port for URL server (default: 8080)
-    --sync-interval Git sync interval in minutes (0 for smart 30s default, -1 to disable)
-    --no-git-sync   Disable periodic git synchronization
+    --no-git-sync   Disable smart background git synchronization
 
 COMMANDS:
     (no command)       Start interactive TUI mode
@@ -101,8 +100,6 @@ EXAMPLES:
     pocket-prompt --url-server                       # Start HTTP API server
     pocket-prompt --url-server --restart            # Kill existing servers and restart
     pocket-prompt --url-server --port 9000          # Start server on port 9000
-    pocket-prompt --url-server --sync-interval 1    # Check every 1 minute
-    pocket-prompt --url-server --sync-interval 0    # Smart 30s checks (default)
     pocket-prompt --url-server --no-git-sync        # Disable git sync
     pocket-prompt list --format table               # List prompts in table format
     pocket-prompt search "machine learning"         # Search prompts
@@ -128,7 +125,6 @@ func main() {
 	var urlServer bool
 	var restartServer bool
 	var port int
-	var syncInterval int
 	var noGitSync bool
 
 	flag.BoolVar(&showVersion, "version", false, "Print version information")
@@ -137,8 +133,7 @@ func main() {
 	flag.BoolVar(&urlServer, "url-server", false, "Start HTTP API server for integrations")
 	flag.BoolVar(&restartServer, "restart", false, "Kill any running URL server instances and restart")
 	flag.IntVar(&port, "port", 8080, "Port for URL server")
-	flag.IntVar(&syncInterval, "sync-interval", 0, "Git sync interval in minutes (0 for smart 30s default, negative to disable)")
-	flag.BoolVar(&noGitSync, "no-git-sync", false, "Disable periodic git synchronization")
+	flag.BoolVar(&noGitSync, "no-git-sync", false, "Disable smart background git synchronization")
 	flag.Parse()
 
 	if showHelp {
@@ -183,24 +178,19 @@ func main() {
 		}
 
 		fmt.Printf("Starting HTTP API server for integrations...\n")
-		urlSrv := server.NewURLServer(svc, port)
+		apiSrv := api.NewAPIServer(svc, port)
 
-		// Configure git sync
-		if noGitSync || syncInterval < 0 {
-			urlSrv.SetGitSync(false)
+		// Configure git sync - simplified to just enable/disable
+		if noGitSync {
+			apiSrv.SetGitSync(false)
+			fmt.Printf("Git sync disabled\n")
 		} else {
-			urlSrv.SetGitSync(true)
-			if syncInterval == 0 {
-				// Use smart default: 30 seconds (frequent checks, efficient pulling)
-				urlSrv.SetSyncInterval(30 * time.Second)
-			} else {
-				// Use custom interval in minutes
-				urlSrv.SetSyncInterval(time.Duration(syncInterval) * time.Minute)
-			}
+			apiSrv.SetGitSync(true)
+			fmt.Printf("Git sync enabled with smart background polling\n")
 		}
 
-		if err := urlSrv.Start(); err != nil {
-			fmt.Printf("Error starting URL server: %v\n", err)
+		if err := apiSrv.Start(); err != nil {
+			fmt.Printf("Error starting API server: %v\n", err)
 			os.Exit(1)
 		}
 		return
