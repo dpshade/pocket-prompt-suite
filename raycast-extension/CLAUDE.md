@@ -72,17 +72,19 @@ Unified dropdown provides access to:
 ## Server Dependency
 
 Requires a running Pocket Prompt server with these endpoints:
-- `/health` - Server status
-- `/prompts` - List prompts (without content, JSON by default)
-- `/prompts/{id}` - Get full prompt content (JSON by default)
-- `/templates` - List templates (JSON by default)
-- `/templates/{id}` - Get template details (JSON by default)
-- `/tags` - List all tags (text format)
-- `/tags/{tag}` - Get prompts by tag (JSON by default)
-- `/search?q={query}` - Fuzzy search (JSON by default)
-- `/boolean?expr={expression}` - Boolean search (JSON by default)
-- `/saved-searches/list` - List saved searches (text format)
-- `/saved-search/{name}` - Execute saved search (JSON by default)
+- `/api/v1/health` - Server status
+- `/api/v1/prompts` - List prompts (without content, JSON with APIResponse wrapper)
+- `/api/v1/prompts/{id}` - Get full prompt content (JSON with APIResponse wrapper)
+- `/api/v1/templates` - List templates (planned for future release)
+- `/api/v1/templates/{id}` - Get template details (planned for future release)
+- `/api/v1/tags` - List all tags (JSON with APIResponse wrapper)
+- `/api/v1/tags/{tag}` - Get prompts by tag (JSON with APIResponse wrapper)
+- `/api/v1/search?q={query}` - Fuzzy search (JSON with APIResponse wrapper)
+- `/api/v1/boolean-search?expr={expression}` - Boolean search (JSON with APIResponse wrapper)
+- `/api/v1/saved-searches` - List saved searches (JSON with APIResponse wrapper)
+- `/api/v1/saved-search/{name}` - Execute saved search (JSON with APIResponse wrapper)
+- `/api/docs` - Interactive API documentation
+- `/api/openapi.json` - OpenAPI specification
 
 ## TypeScript Architecture
 

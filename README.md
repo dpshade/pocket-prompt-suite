@@ -2,6 +2,87 @@
 
 A comprehensive AI context management system with multiple interface options.
 
+## Table of Contents
+
+- [Quick Start](#quick-start)
+  - [CLI Quick Start](#cli-quick-start)
+  - [TUI Quick Start](#tui-quick-start)
+  - [API Server Quick Start](#api-server-quick-start)
+  - [Raycast Extension Quick Start](#raycast-extension-quick-start)
+- [Repository Structure](#repository-structure)
+- [Components](#components)
+- [Development Workflow](#development-workflow)
+- [Publishing](#publishing)
+- [Integration Examples](#integration-examples)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Quick Start
+
+### CLI Quick Start
+
+```bash
+# 1. Build the core application
+cd core/
+go build -o pkt main.go
+
+# 2. Initialize your prompt library
+./pkt --init
+
+# 3. Start using CLI commands
+./pkt list                    # List all prompts
+./pkt search "AI"             # Search prompts
+./pkt show prompt-id          # Display specific prompt
+```
+
+### TUI Quick Start
+
+```bash
+# 1. Build and launch TUI
+cd core/
+go run main.go --tui
+
+# 2. Navigate with keyboard shortcuts
+# ↑/↓ or k/j - Navigate
+# Enter - Open prompt
+# / - Search
+# Ctrl+B - Boolean search
+# q - Quit
+```
+
+### API Server Quick Start
+
+```bash
+# 1. Start the API server
+cd core/
+go run main.go --url-server
+
+# 2. Test the API
+curl "http://localhost:8080/api/v1/health"
+curl "http://localhost:8080/api/v1/prompts"
+
+# 3. View API documentation
+open "http://localhost:8080/api/docs"
+```
+
+### Raycast Extension Quick Start
+
+```bash
+# 1. Install dependencies
+cd raycast-extension/
+bun install
+
+# 2. Start API server (in another terminal)
+cd ../core/ && go run main.go --url-server
+
+# 3. Import extension to Raycast
+bun run dev
+
+# 4. Launch Raycast → "Search Prompts" → Start searching!
+```
+
+---
+
 ## Repository Structure
 
 ```
@@ -31,48 +112,12 @@ The main Pocket Prompt application written in Go that provides:
 - **Library Management**: Organize prompts, templates, and saved searches
 - **Git Sync**: Synchronize prompt libraries across devices
 
-**Quick Start:**
-```bash
-cd core/
-go run main.go --url-server  # Start HTTP server
-# or
-go run main.go --tui         # Launch TUI interface
-```
-
 ### 🎯 **Raycast Extension** (`/raycast-extension`)
 A powerful Raycast extension providing native macOS integration:
 - **Unified Search**: Fuzzy text, boolean expressions, and saved searches
 - **Quick Access**: Launch via Raycast hotkey for instant prompt access
 - **Native Integration**: Copy to clipboard, variable forms, metadata views
 - **Intelligent Detection**: Automatically detects search type and routing
-
-**Quick Start:**
-```bash
-cd raycast-extension/
-bun install
-bun run dev     # Import into Raycast for development
-```
-
-## Getting Started
-
-### 1. **Set Up Core Application**
-```bash
-cd core/
-go build -o pocket-prompt main.go
-./pocket-prompt --url-server  # Start HTTP server on :8080
-```
-
-### 2. **Install Raycast Extension**
-```bash
-cd raycast-extension/
-bun install
-bun run dev  # Imports extension into Raycast
-```
-
-### 3. **Configure Integration**
-- Open Raycast → Extensions → Pocket Prompt → Configure
-- Set Server URL to `http://localhost:8080` (or your custom server)
-- Test connection by searching for prompts
 
 ## Development Workflow
 
@@ -111,19 +156,32 @@ The core application can be distributed as:
 
 ### Using HTTP API
 ```bash
-# Start server
+# Start server with smart git sync
 cd core/ && ./pocket-prompt --url-server
 
+# Health check
+curl "http://localhost:8080/api/v1/health"
+
+# List all prompts
+curl "http://localhost:8080/api/v1/prompts"
+
 # Search prompts
-curl "http://localhost:8080/pocket-prompt/search?q=ai&format=json"
+curl "http://localhost:8080/api/v1/search?q=ai"
 
 # Boolean search  
-curl "http://localhost:8080/pocket-prompt/boolean?expr=ai%20AND%20agent&format=json"
+curl "http://localhost:8080/api/v1/boolean-search?expr=ai%20AND%20agent"
 
-# Render prompt with variables
-curl -X POST "http://localhost:8080/pocket-prompt/render/prompt-id" \
-  -H "Content-Type: application/json" \
-  -d '{"variable1": "value1"}'
+# Get specific prompt
+curl "http://localhost:8080/api/v1/prompts/your-prompt-id"
+
+# List saved searches
+curl "http://localhost:8080/api/v1/saved-searches"
+
+# Get prompts by tag
+curl "http://localhost:8080/api/v1/tags/ai"
+
+# API documentation
+open "http://localhost:8080/api/docs"
 ```
 
 ### Raycast Integration

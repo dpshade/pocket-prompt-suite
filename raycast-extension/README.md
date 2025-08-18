@@ -2,46 +2,62 @@
 
 A Raycast extension that provides quick access to your Pocket Prompt library for AI context management.
 
-## Prerequisites
+## Table of Contents
 
-1. **Pocket Prompt Server**: Make sure you have the Pocket Prompt URL server running
-   ```bash
-   cd pocket-prompt-suite/core
-   pocket-prompt --url-server
-   ```
-   The default server URL is `http://localhost:8080`, but this can be configured in the extension preferences.
+- [Quick Start](#quick-start)
+  - [Installation & Setup](#installation--setup)
+  - [Basic Usage](#basic-usage)
+- [Features](#features)
+- [Usage Guide](#usage-guide)
+  - [Search Modes](#search-modes)
+  - [Keyboard Shortcuts](#keyboard-shortcuts)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development)
+- [API Integration](#api-integration)
+- [Contributing](#contributing)
 
-2. **Raycast**: Install Raycast on your Mac from [raycast.com](https://raycast.com)
+## Quick Start
 
-## Installation
+### Installation & Setup
 
-### From Raycast Store (Recommended)
-Once published, install directly from the Raycast Store:
-1. Open Raycast → "Store" → Search "Pocket Prompt"
-2. Click "Install" 
-3. Configure your server URL in preferences
+```bash
+# 1. Start Pocket Prompt server
+cd pocket-prompt-suite/core
+go run main.go --url-server  # Runs on http://localhost:8080
 
-### Manual Development Installation
-1. Clone this repository:
-   ```bash
-   git clone <repository-url>
-   cd pocket-prompt-suite/raycast-extension
-   ```
+# 2. Install extension dependencies
+cd ../raycast-extension
+bun install
 
-2. Install dependencies:
-   ```bash
-   bun install
-   ```
+# 3. Import extension to Raycast
+bun run dev
 
-3. Build and import into Raycast:
-   ```bash
-   bun run dev
-   ```
+# 4. Configure extension in Raycast
+# Raycast → Extensions → Pocket Prompt → Configure Extension
+# Set "Server URL" to: http://localhost:8080
+```
 
-4. **Configure Server URL**: 
-   - Open Raycast → "Extensions" → "Pocket Prompt" → "Configure Extension"
-   - Set "Server URL" to your Pocket Prompt server location
-   - Default: `http://localhost:8080`
+### Basic Usage
+
+```bash
+# 1. Launch Raycast
+⌘ + Space
+
+# 2. Type "Search Prompts"
+# One search bar handles everything:
+
+# Fuzzy search (automatic)
+machine learning    → Finds prompts containing these words
+
+# Boolean search (auto-detected)
+ai AND agent        → Logical search with operators
+design OR ui        → Multiple tag matching
+
+# Use dropdown for saved searches and tag filters
+Ctrl + P            → Open filter dropdown
+```
+
+---
 
 ## Features
 
@@ -76,9 +92,9 @@ One search bar that handles everything intelligently:
 - **Smart Badges**: "Boolean" badge for detected boolean searches
 - **Context Badges**: "Saved" badge when using saved searches
 
-## Usage
+## Usage Guide
 
-### 🔍 **One Search Bar - Multiple Modes**
+### Search Modes
 
 Launch Raycast → "Search Prompts" → One interface handles everything!
 
@@ -108,35 +124,20 @@ design OR ui           → Boolean logic detected
 2. Select from "Tags" section
 3. Instantly filter to that tag
 
-### ⌨️ **Keyboard Shortcuts**
+### Keyboard Shortcuts
 - `Ctrl + P` - Open filter dropdown (saved searches + tags)
 - `Cmd + B` - Force current text as boolean search
 - `Cmd + K` - Clear search and filters
 - `Cmd + R` - Refresh results
-
-## API Integration
-
-The extension connects to your local Pocket Prompt server via HTTP API:
-
-### Core APIs
-- `GET /health` - Check server status
-- `GET /pocket-prompt/list` - List all prompts  
-- `GET /pocket-prompt/tags` - Get available tags
-- `GET /pocket-prompt/render/{id}` - Render prompt with variables
-
-### Search APIs
-- `GET /pocket-prompt/search?q=query` - Fuzzy search prompts
-- `GET /pocket-prompt/boolean?expr=expression` - Boolean search with logic
-- `GET /pocket-prompt/saved-searches/list` - List saved searches
-- `GET /pocket-prompt/saved-search/{name}` - Execute saved search
 
 ## Troubleshooting
 
 ### "Server Not Available" Error
 - Make sure Pocket Prompt server is running: `pocket-prompt --url-server`
 - Check the server URL in extension preferences matches your running server
-- Verify the server is accessible at your configured URL + `/health`
+- Verify the server is accessible at your configured URL + `/api/v1/health`
 - Default server URL is `http://localhost:8080`
+- Check API documentation at `http://localhost:8080/api/docs`
 
 ### No Prompts Showing
 - Ensure your Pocket Prompt library has prompts
@@ -154,11 +155,14 @@ The extension uses `@ts-nocheck` comments to handle React/Raycast API type compa
 
 ## Development
 
-To modify the extension:
-
-1. Edit files in `src/`
-2. Run `bun run dev` to test changes
-3. Use `bun run lint` to check code style
+### Available Scripts
+```bash
+bun run dev         # Development mode with live reload
+bun run build       # Build for production
+bun run lint        # Check code style
+bun run fix-lint    # Auto-fix linting issues
+bun run publish     # Submit to Raycast Store (requires auth)
+```
 
 ### File Structure
 ```
@@ -176,16 +180,7 @@ src/
     └── searchDetection.ts       # Smart search type detection
 ```
 
-### Available Scripts
-```bash
-bun run dev         # Development mode with live reload
-bun run build       # Build for production
-bun run lint        # Check code style
-bun run fix-lint    # Auto-fix linting issues
-bun run publish     # Submit to Raycast Store (requires auth)
-```
-
-## Publishing to Raycast Store
+### Publishing to Raycast Store
 
 To submit this extension to the official Raycast Store:
 
@@ -204,10 +199,22 @@ To submit this extension to the official Raycast Store:
    - The script automatically creates a pull request
    - Wait for Raycast team review
 
-4. **Review Process**:
-   - Raycast team reviews your submission
-   - They may request changes or improvements
-   - Once approved, extension goes live in the store
+## API Integration
+
+The extension connects to your local Pocket Prompt server via HTTP API:
+
+### Core APIs
+- `GET /api/v1/health` - Check server status
+- `GET /api/v1/prompts` - List all prompts  
+- `GET /api/v1/tags` - Get available tags
+- `GET /api/v1/prompts/{id}` - Get specific prompt with content
+
+### Search APIs
+- `GET /api/v1/search?q=query` - Fuzzy search prompts
+- `GET /api/v1/boolean-search?expr=expression` - Boolean search with logic
+- `GET /api/v1/saved-searches` - List saved searches
+- `GET /api/v1/saved-search/{name}` - Execute saved search
+- `GET /api/v1/tags/{tag}` - Get prompts by specific tag
 
 ## Contributing
 
@@ -234,10 +241,3 @@ Contributions are welcome! Please:
 ## License
 
 MIT - See [LICENSE](LICENSE) file for details.
-
-## Support
-
-For issues and feature requests:
-- **Extension Issues**: Report in this repository's issues
-- **Pocket Prompt Server Issues**: Report in the main Pocket Prompt repository
-- **General Questions**: Use GitHub Discussions

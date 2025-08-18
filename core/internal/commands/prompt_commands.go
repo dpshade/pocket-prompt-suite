@@ -46,6 +46,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/dpshade/pocket-prompt/internal/models"
 	"github.com/dpshade/pocket-prompt/internal/service"
@@ -332,13 +333,55 @@ func (c *CreatePromptCommand) SetService(svc *service.Service) {
 }
 
 func (c *CreatePromptCommand) SetParameters(params map[string]interface{}) error {
+	// Handle legacy format with pre-built Prompt object
 	if promptData, ok := params["prompt"]; ok {
 		if prompt, ok := promptData.(*models.Prompt); ok {
 			c.Prompt = prompt
-		} else {
-			return fmt.Errorf("invalid prompt data type")
+			return nil
 		}
 	}
+
+	// Handle new format with primitive parameters
+	prompt := &models.Prompt{}
+
+	// Required fields
+	if id, ok := params["id"].(string); ok {
+		prompt.ID = id
+	}
+	if name, ok := params["name"].(string); ok {
+		prompt.Name = name
+	}
+	if content, ok := params["content"].(string); ok {
+		prompt.Content = content
+	}
+
+	// Optional fields
+	if summary, ok := params["summary"].(string); ok {
+		prompt.Summary = summary
+	}
+	if pack, ok := params["pack"].(string); ok {
+		prompt.Pack = pack
+	}
+
+	// Handle tags array
+	if tagsInterface, ok := params["tags"]; ok {
+		if tagArray, ok := tagsInterface.([]interface{}); ok {
+			prompt.Tags = make([]string, len(tagArray))
+			for i, tag := range tagArray {
+				if tagStr, ok := tag.(string); ok {
+					prompt.Tags[i] = tagStr
+				}
+			}
+		}
+	}
+
+	// Set default values
+	prompt.Version = "1.0.0"
+	now := time.Now()
+	prompt.CreatedAt = now
+	prompt.UpdatedAt = now
+
+	c.Prompt = prompt
 	return nil
 }
 

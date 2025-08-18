@@ -86,21 +86,22 @@ The core application uses a service-oriented architecture:
 - **`internal/service/`**: Business logic layer coordinating between storage, search, and rendering
 - **`internal/storage/`**: File system abstraction with caching layer
 - **`internal/models/`**: Core data structures (Prompt, Template, Search)
-- **`internal/server/`**: HTTP API handlers translating web requests to service calls
+- **`internal/api/`**: Modern HTTP API server with middleware architecture and OpenAPI documentation
 
 ### Multi-Interface Design
 Three execution modes share the same service layer:
-1. **CLI** (`internal/cli/`): Direct command execution
+1. **CLI** (`internal/cli/`): Direct command execution via unified command system
 2. **TUI** (`internal/ui/`): Bubble Tea interactive interface
-3. **HTTP Server** (`internal/server/`): REST API for external clients
+3. **HTTP Server** (`internal/api/`): RESTful API with `/api/v1/*` endpoints for external clients
 
 ### API Integration Points
 Critical HTTP endpoints that Raycast extension depends on:
-- `/pocket-prompt/search?q={query}` - Fuzzy text search
-- `/pocket-prompt/boolean?expr={expression}` - Boolean logic search  
-- `/pocket-prompt/list` - List all prompts (without content)
-- `/pocket-prompt/get/{id}` - Fetch full prompt content
-- `/pocket-prompt/render/{id}` - Render prompt with variable substitution
+- `/api/v1/search?q={query}` - Fuzzy text search
+- `/api/v1/boolean-search?expr={expression}` - Boolean logic search  
+- `/api/v1/prompts` - List all prompts (without content)
+- `/api/v1/prompts/{id}` - Fetch full prompt content
+- `/api/v1/saved-searches` - List and execute saved searches
+- `/api/v1/tags/{tag}` - Get prompts by tag
 
 ## Extension Architecture
 
@@ -113,7 +114,8 @@ Core pattern: single search interface with intelligent routing:
 ### API Client Design
 - **`utils/api.ts`**: Centralized API client with configurable server URL
 - **Dynamic server resolution**: Reads Raycast preferences on each request
-- **Two-stage content loading**: List API excludes content; detail view fetches via `/get/{id}`
+- **Two-stage content loading**: List API excludes content; detail view fetches via `/api/v1/prompts/{id}`
+- **APIResponse wrapper**: All responses use standardized JSON format with success/error handling
 
 ### Component Communication Pattern
 - **State management**: React hooks with `useCachedPromise` for API calls
@@ -124,6 +126,7 @@ Core pattern: single search interface with intelligent routing:
 
 ### API Contract Between Components
 The Raycast extension expects specific JSON response formats:
+- **APIResponse wrapper**: All responses wrapped in `{success, data, message, timestamp}` format
 - **Prompt objects**: PascalCase fields (ID, Name, Tags, Variables, Content)
 - **Variable definitions**: Objects with `name`, `type`, `required`, `description` fields
 - **Search responses**: Arrays of prompt objects with consistent structure
@@ -145,14 +148,15 @@ End-to-end testing requires both components:
 
 ### Cross-Component Dependencies
 - **`core/internal/models/prompt.go`** ↔ **`raycast-extension/src/types/index.ts`**: Must maintain field compatibility
-- **`core/internal/server/server.go`** ↔ **`raycast-extension/src/utils/api.ts`**: API endpoint contract
+- **`core/internal/api/server.go`** ↔ **`raycast-extension/src/utils/api.ts`**: API endpoint contract
 - **`core/internal/service/service.go`** ↔ **Extension search hooks**: Search behavior consistency
 
 ### Mono-repo Coordination Points
 When making changes that affect both components:
 1. **API changes**: Update Go structs, then TypeScript interfaces
-2. **New endpoints**: Add handler in `server.go`, then client method in `api.ts`
+2. **New endpoints**: Add handler in `api/server.go`, then client method in `api.ts`
 3. **Search logic**: Coordinate between Go service layer and TypeScript detection logic
+4. **Command system**: New features require command handlers in `internal/commands/`
 
 ## Testing Strategy
 
@@ -173,7 +177,8 @@ The CI pipeline (`/github/workflows/ci.yml`) includes:
 
 ### Manual Integration Verification
 1. Start server: `bun run server`
-2. Test health endpoint: `curl http://localhost:8080/health`
-3. Test search: `curl "http://localhost:8080/pocket-prompt/search?q=test&format=json"`
+2. Test health endpoint: `curl http://localhost:8080/api/v1/health`
+3. Test search: `curl "http://localhost:8080/api/v1/search?q=test"`
 4. Load extension: `bun run dev`
 5. Verify search works in Raycast interface
+6. Check API docs: `open http://localhost:8080/api/docs`

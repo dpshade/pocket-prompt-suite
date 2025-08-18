@@ -63,6 +63,10 @@ build/
 *.dylib
 core/pocket-prompt
 core/pocket-prompt-test
+core/pkt
+core/test_build
+**/test_build
+**/pkt
 
 # Test binary, built with `go test -c`
 *.test
@@ -107,10 +111,8 @@ core/archive/
 core/prompts/
 core/templates/
 core/packs/
-core/test-library/core/pkt
-core/pkt
-core/.crush/
 core/test-library/
+core/.crush/
 *.db
 *.db-*
 .claude/

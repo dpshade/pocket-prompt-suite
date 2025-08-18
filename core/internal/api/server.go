@@ -62,6 +62,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -559,9 +560,55 @@ func (s *APIServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 	s.writeResponse(w, result.Data, result.Message, http.StatusOK)
 }
 
-// CRUD operations for prompts (implementation planned for future release)
+// handleCreatePrompt handles POST /api/v1/prompts
 func (s *APIServer) handleCreatePrompt(w http.ResponseWriter, r *http.Request) {
-	s.writeError(w, errors.NewAppError(errors.ErrCodeNotImplemented, "Prompt creation via API is planned for a future release"))
+	// Parse JSON request body
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		s.writeError(w, errors.ValidationError("Failed to read request body"))
+		return
+	}
+
+	if len(body) == 0 {
+		s.writeError(w, errors.ValidationError("Request body is required"))
+		return
+	}
+
+	var requestData map[string]interface{}
+	if err := json.Unmarshal(body, &requestData); err != nil {
+		s.writeError(w, errors.ValidationError("Invalid JSON in request body"))
+		return
+	}
+
+	// Pass the parsed JSON data directly as parameters
+	// The validation system and command will handle validation and object construction
+	params := requestData
+
+	// Execute unified command
+	ctx := context.Background()
+	result, err := s.executor.Execute(ctx, "create", params)
+	if err != nil {
+		s.writeError(w, err)
+		return
+	}
+
+	if !result.Success {
+		if result.Error != nil {
+			appErr := &errors.AppError{
+				Code:     errors.ErrorCode(result.Error.Code),
+				Message:  result.Error.Message,
+				Details:  result.Error.Details,
+				Category: errors.ErrorCategory(result.Error.Category),
+				Severity: errors.ErrorSeverity(result.Error.Severity),
+			}
+			s.writeError(w, appErr)
+		} else {
+			s.writeError(w, errors.InternalError("Command failed"))
+		}
+		return
+	}
+
+	s.writeResponse(w, result.Data, result.Message, http.StatusCreated)
 }
 
 func (s *APIServer) handleUpdatePrompt(w http.ResponseWriter, r *http.Request, id string) {
